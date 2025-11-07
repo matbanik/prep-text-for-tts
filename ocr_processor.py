@@ -1,69 +1,38 @@
 """
 OCR Processing Module
-Handles PDF to text extraction using various OCR models
+Handles PDF to text extraction using LM Studio vision models
 """
 
 import os
+import base64
 from pathlib import Path
 from typing import List, Optional, Tuple
 from PIL import Image
 import io
+import openai
 
 # ============================================================================
-# OCR MODEL CONFIGURATIONS
+# OCR MODEL CONFIGURATIONS (for LM Studio)
 # ============================================================================
 
-OCR_MODELS = {
-    "qwen2-vl-2b": {
-        "name": "Qwen2-VL-2B (Recommended)",
-        "hf_model": "Qwen/Qwen2-VL-2B-Instruct",
-        "description": "Fast, excellent accuracy, 90+ languages",
-        "memory": "~8GB VRAM",
-        "speed": "Fast",
-        "quality": "Excellent"
-    },
-    "qwen2-vl-7b": {
-        "name": "Qwen2-VL-7B (Best Quality)",
-        "hf_model": "Qwen/Qwen2-VL-7B-Instruct",
-        "description": "Best overall quality, slower than 2B",
-        "memory": "~16GB VRAM",
-        "speed": "Medium",
-        "quality": "Exceptional"
-    },
-    "got-ocr": {
-        "name": "GOT-OCR2.0 (Lightweight)",
-        "hf_model": "ucaslcl/GOT-OCR2_0",
-        "description": "Lightweight, OCR-specific, very fast",
-        "memory": "~4GB VRAM",
-        "speed": "Very Fast",
-        "quality": "Good"
-    },
-    "minicpm-o": {
-        "name": "MiniCPM-o-2.6 (Top Accuracy)",
-        "hf_model": "openbmb/MiniCPM-o-2_6",
-        "description": "#1 OCRBench, beats GPT-4o",
-        "memory": "~12GB VRAM",
-        "speed": "Medium",
-        "quality": "Best"
-    }
-}
+# Default OCR model for LM Studio
+DEFAULT_OCR_MODEL = "qwen2-vl-7b-instruct"
 
 
 class OCRProcessor:
-    """Handles OCR processing for PDFs"""
+    """Handles OCR processing for PDFs using LM Studio"""
 
-    def __init__(self, model_key="qwen2-vl-2b"):
+    def __init__(self, lm_studio_host="http://localhost:1234/v1", model_name=None):
         """
-        Initialize OCR processor
+        Initialize OCR processor for LM Studio
 
         Args:
-            model_key: Key from OCR_MODELS dict
+            lm_studio_host: LM Studio API endpoint
+            model_name: Model name loaded in LM Studio (e.g., "qwen2-vl-7b-instruct")
         """
-        self.model_key = model_key
-        self.model = None
-        self.processor = None
-        self.tokenizer = None
-        self.model_loaded = False
+        self.lm_studio_host = lm_studio_host
+        self.model_name = model_name or DEFAULT_OCR_MODEL
+        self.client = None
 
     @staticmethod
     def check_dependencies():
@@ -71,14 +40,9 @@ class OCRProcessor:
         missing = []
 
         try:
-            import transformers
+            import openai
         except ImportError:
-            missing.append("transformers")
-
-        try:
-            import torch
-        except ImportError:
-            missing.append("torch")
+            missing.append("openai")
 
         try:
             import PIL
@@ -93,176 +57,100 @@ class OCRProcessor:
 
         return missing
 
-    def load_model(self, progress_callback=None):
-        """Load the selected OCR model"""
+    def connect(self, progress_callback=None):
+        """Connect to LM Studio and verify vision model is loaded"""
         if progress_callback:
-            progress_callback(f"Loading {OCR_MODELS[self.model_key]['name']}...")
+            progress_callback(f"Connecting to LM Studio at {self.lm_studio_host}...")
 
         try:
-            if self.model_key.startswith("qwen2-vl"):
-                self._load_qwen2_vl(progress_callback)
-            elif self.model_key == "got-ocr":
-                self._load_got_ocr(progress_callback)
-            elif self.model_key == "minicpm-o":
-                self._load_minicpm(progress_callback)
-            else:
-                raise ValueError(f"Unknown model key: {self.model_key}")
+            # Create OpenAI client pointing to LM Studio
+            self.client = openai.OpenAI(
+                base_url=self.lm_studio_host,
+                api_key="not-needed"  # LM Studio doesn't require API key
+            )
 
-            self.model_loaded = True
+            # Test connection with a simple text request
             if progress_callback:
-                progress_callback("Model loaded successfully!")
+                progress_callback("Testing connection...")
+
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=[{"role": "user", "content": "Hello"}],
+                max_tokens=10
+            )
+
+            if progress_callback:
+                progress_callback(f"✓ Connected to LM Studio successfully!")
+                progress_callback(f"Model: {self.model_name}")
+
+            return True
 
         except Exception as e:
             if progress_callback:
-                progress_callback(f"Error loading model: {str(e)}")
-            raise
-
-    def _load_qwen2_vl(self, progress_callback=None):
-        """Load Qwen2-VL model"""
-        from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
-        import torch
-
-        model_name = OCR_MODELS[self.model_key]["hf_model"]
-
-        if progress_callback:
-            progress_callback(f"Downloading {model_name}...")
-
-        self.model = Qwen2VLForConditionalGeneration.from_pretrained(
-            model_name,
-            torch_dtype=torch.bfloat16,
-            device_map="auto"
-        )
-
-        self.processor = AutoProcessor.from_pretrained(model_name)
-
-        if progress_callback:
-            progress_callback("Model loaded into GPU memory")
-
-    def _load_got_ocr(self, progress_callback=None):
-        """Load GOT-OCR2.0 model"""
-        from transformers import AutoModel, AutoTokenizer
-
-        model_name = OCR_MODELS[self.model_key]["hf_model"]
-
-        if progress_callback:
-            progress_callback(f"Downloading {model_name}...")
-
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-        self.model = AutoModel.from_pretrained(
-            model_name,
-            trust_remote_code=True,
-            low_cpu_mem_usage=True,
-            device_map="auto",
-            use_safetensors=True
-        )
-
-        if progress_callback:
-            progress_callback("GOT-OCR2.0 loaded successfully")
-
-    def _load_minicpm(self, progress_callback=None):
-        """Load MiniCPM-o model"""
-        from transformers import AutoModel, AutoTokenizer
-
-        model_name = OCR_MODELS[self.model_key]["hf_model"]
-
-        if progress_callback:
-            progress_callback(f"Downloading {model_name}...")
-
-        self.model = AutoModel.from_pretrained(
-            model_name,
-            trust_remote_code=True,
-            device_map="auto"
-        )
-
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            model_name,
-            trust_remote_code=True
-        )
-
-        if progress_callback:
-            progress_callback("MiniCPM-o loaded successfully")
+                progress_callback(f"✗ Connection failed: {str(e)}")
+            raise RuntimeError(
+                f"Failed to connect to LM Studio:\n{str(e)}\n\n"
+                f"Make sure:\n"
+                f"1. LM Studio is running\n"
+                f"2. Local Server is started\n"
+                f"3. {self.model_name} is loaded in LM Studio"
+            )
 
     def extract_text_from_image(self, image_path: str) -> str:
-        """Extract text from a single image using loaded OCR model"""
-        if not self.model_loaded:
-            raise RuntimeError("Model not loaded. Call load_model() first.")
+        """Extract text from a single image using LM Studio vision model"""
+        if not self.client:
+            raise RuntimeError("Not connected. Call connect() first.")
 
         try:
-            if self.model_key.startswith("qwen2-vl"):
-                return self._ocr_qwen2_vl(image_path)
-            elif self.model_key == "got-ocr":
-                return self._ocr_got(image_path)
-            elif self.model_key == "minicpm-o":
-                return self._ocr_minicpm(image_path)
+            # Encode image as base64
+            with open(image_path, 'rb') as image_file:
+                image_data = base64.b64encode(image_file.read()).decode('utf-8')
+
+            # Determine image type
+            image_ext = Path(image_path).suffix.lower()
+            mime_types = {
+                '.jpg': 'image/jpeg',
+                '.jpeg': 'image/jpeg',
+                '.png': 'image/png',
+                '.webp': 'image/webp',
+                '.gif': 'image/gif'
+            }
+            mime_type = mime_types.get(image_ext, 'image/jpeg')
+
+            # Create vision message for LM Studio
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Extract all text from this image. Output only the text content, preserving paragraph structure and formatting. Do not add any commentary or explanations."
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime_type};base64,{image_data}"
+                            }
+                        }
+                    ]
+                }
+            ]
+
+            # Call LM Studio vision API
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                max_tokens=4096,
+                temperature=0.1  # Low temperature for consistent OCR
+            )
+
+            # Extract response
+            extracted_text = response.choices[0].message.content
+
+            return extracted_text.strip()
+
         except Exception as e:
             raise RuntimeError(f"OCR failed: {str(e)}")
-
-    def _ocr_qwen2_vl(self, image_path: str) -> str:
-        """Run OCR using Qwen2-VL"""
-        from qwen_vl_utils import process_vision_info
-        import torch
-
-        messages = [{
-            "role": "user",
-            "content": [
-                {"type": "image", "image": image_path},
-                {"type": "text", "text": "Extract all text from this image. Output only the text, preserving paragraphs and structure."}
-            ]
-        }]
-
-        text = self.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        image_inputs, video_inputs = process_vision_info(messages)
-
-        inputs = self.processor(
-            text=[text],
-            images=image_inputs,
-            videos=video_inputs,
-            padding=True,
-            return_tensors="pt"
-        ).to(self.model.device)
-
-        with torch.no_grad():
-            output_ids = self.model.generate(**inputs, max_new_tokens=4096)
-
-        output_text = self.processor.batch_decode(
-            output_ids,
-            skip_special_tokens=True,
-            clean_up_tokenization_spaces=False
-        )[0]
-
-        # Extract just the assistant's response
-        if "<|im_start|>assistant" in output_text:
-            output_text = output_text.split("<|im_start|>assistant")[-1]
-        if "<|im_end|>" in output_text:
-            output_text = output_text.split("<|im_end|>")[0]
-
-        return output_text.strip()
-
-    def _ocr_got(self, image_path: str) -> str:
-        """Run OCR using GOT-OCR2.0"""
-        # GOT-OCR uses chat interface
-        result = self.model.chat(self.tokenizer, image_path, ocr_type='format')
-        return result
-
-    def _ocr_minicpm(self, image_path: str) -> str:
-        """Run OCR using MiniCPM-o"""
-        # Load image
-        image = Image.open(image_path).convert('RGB')
-
-        # Create message
-        msgs = [{
-            'role': 'user',
-            'content': "Extract all text from this image, preserving paragraph structure."
-        }]
-
-        # Run inference
-        res = self.model.chat(
-            image=image,
-            msgs=msgs,
-            tokenizer=self.tokenizer
-        )
-
-        return res
 
     @staticmethod
     def pdf_to_images(pdf_path: str, output_dir: Optional[str] = None, dpi: int = 300) -> List[str]:
@@ -319,8 +207,8 @@ class OCRProcessor:
         Returns:
             Extracted text from all pages
         """
-        if not self.model_loaded:
-            raise RuntimeError("Model not loaded. Call load_model() first.")
+        if not self.client:
+            raise RuntimeError("Not connected to LM Studio. Call connect() first.")
 
         # Convert PDF to images
         if progress_callback:
