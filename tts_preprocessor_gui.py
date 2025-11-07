@@ -269,6 +269,7 @@ class TTSPreprocessorGUI:
         ttk.Label(files_frame, text="Input File:").grid(row=0, column=0, sticky=tk.W, padx=5)
         ttk.Entry(files_frame, textvariable=self.input_file, width=50).grid(row=0, column=1, padx=5)
         ttk.Button(files_frame, text="Browse...", command=self.browse_input).grid(row=0, column=2, padx=5)
+        ttk.Button(files_frame, text="🔧 Pre-clean", command=self.preclean_input).grid(row=0, column=3, padx=5)
         
         ttk.Label(files_frame, text="Output File:").grid(row=1, column=0, sticky=tk.W, padx=5)
         ttk.Entry(files_frame, textvariable=self.output_file, width=50).grid(row=1, column=1, padx=5)
@@ -335,12 +336,6 @@ class TTSPreprocessorGUI:
         # Control Buttons
         button_frame = ttk.LabelFrame(control_frame, text="Controls", padding=10)
         button_frame.pack(side=tk.LEFT, fill=tk.BOTH, padx=5)
-
-        self.preclean_btn = ttk.Button(button_frame, text="🔧 Pre-clean Input",
-                                       command=self.preclean_input)
-        self.preclean_btn.pack(fill=tk.X, pady=2)
-
-        ttk.Separator(button_frame, orient='horizontal').pack(fill=tk.X, pady=5)
 
         self.start_btn = ttk.Button(button_frame, text="▶ Start Processing",
                                     command=self.start_processing, style='Accent.TButton')
@@ -468,14 +463,14 @@ class TTSPreprocessorGUI:
             messagebox.showerror("Connection Test", f"Failed to connect:\n{str(e)}\n\nMake sure LM Studio Local Server is running!")
 
     def preclean_input(self):
-        """Pre-clean input file with deterministic text processing"""
+        """Pre-clean input file with detailed transformation logging"""
         if not self.input_file.get():
             messagebox.showerror("Error", "Please select an input file first!")
             return
 
         try:
             self.log_message("="*70, 'info')
-            self.log_message("🔧 STARTING DETERMINISTIC PRE-CLEANING", 'batch')
+            self.log_message("🔧 STARTING DETERMINISTIC PRE-CLEANING WITH DETAILED LOGGING", 'batch')
             self.log_message("="*70, 'info')
 
             # Read input file
@@ -491,20 +486,80 @@ class TTSPreprocessorGUI:
             self.log_message(f"   Original: {original_lines:,} lines, {original_size:,} chars", 'info')
             self.log_message("", 'info')
 
-            # Apply preprocessing
-            self.log_message("⚙ Applying transformations:", 'info')
-            self.log_message("   • Removing page numbers and headers", 'info')
-            self.log_message("   • Fixing contractions (didn ' t → didn't)", 'info')
-            self.log_message("   • Merging hyphenated line breaks", 'info')
-            self.log_message("   • Expanding abbreviations (Mr. → Mister)", 'info')
-            self.log_message("   • Removing unicode artifacts (·, ■, ●)", 'info')
-            self.log_message("   • Normalizing line breaks (single → join, double → keep)", 'info')
-            self.log_message("   • Chunking for TTS (max 250 chars/line)", 'info')
-            self.log_message("", 'info')
-
             start_time = time.time()
-            preprocessed = TextPreprocessor.preprocess_text(original_text, max_chunk_size=250)
+            current_text = original_text
+
+            # Helper function to show changes
+            def log_transformation(step_name, before, after, show_examples=True):
+                before_size = len(before)
+                after_size = len(after)
+                change = after_size - before_size
+                change_pct = (change / before_size * 100) if before_size > 0 else 0
+
+                self.log_message(f"{'='*70}", 'batch')
+                self.log_message(f"STEP: {step_name}", 'batch')
+                self.log_message(f"{'='*70}", 'batch')
+                self.log_message(f"   Before: {before_size:,} chars", 'info')
+                self.log_message(f"   After:  {after_size:,} chars", 'info')
+                self.log_message(f"   Change: {change:+,} chars ({change_pct:+.2f}%)", 'success' if change <= 0 else 'warning')
+
+                if show_examples and before != after:
+                    # Find differences
+                    self._show_text_differences(before, after, step_name)
+
+                self.log_message("", 'info')
+                return after
+
+            # Step 1: Remove page numbers
+            self.log_message("🔹 Step 1: Removing page numbers and headers", 'batch')
+            before = current_text
+            current_text = TextPreprocessor.remove_page_numbers(current_text)
+            current_text = log_transformation("Remove Page Numbers", before, current_text)
+
+            # Step 2: Fix contractions
+            self.log_message("🔹 Step 2: Fixing contractions", 'batch')
+            before = current_text
+            current_text = TextPreprocessor.fix_contractions(current_text)
+            current_text = log_transformation("Fix Contractions", before, current_text)
+
+            # Step 3: Fix hyphenated line breaks
+            self.log_message("🔹 Step 3: Merging hyphenated line breaks", 'batch')
+            before = current_text
+            current_text = TextPreprocessor.fix_hyphenated_breaks(current_text)
+            current_text = log_transformation("Fix Hyphenated Breaks", before, current_text)
+
+            # Step 4: Expand abbreviations
+            self.log_message("🔹 Step 4: Expanding abbreviations", 'batch')
+            before = current_text
+            current_text = TextPreprocessor.expand_abbreviations(current_text)
+            current_text = log_transformation("Expand Abbreviations", before, current_text)
+
+            # Step 5: Remove unicode artifacts
+            self.log_message("🔹 Step 5: Removing unicode artifacts", 'batch')
+            before = current_text
+            current_text = TextPreprocessor.remove_unicode_artifacts(current_text)
+            current_text = log_transformation("Remove Unicode Artifacts", before, current_text)
+
+            # Step 6: Normalize line breaks
+            self.log_message("🔹 Step 6: Normalizing line breaks", 'batch')
+            before = current_text
+            current_text = TextPreprocessor.normalize_line_breaks(current_text)
+            current_text = log_transformation("Normalize Line Breaks", before, current_text)
+
+            # Step 7: Normalize whitespace
+            self.log_message("🔹 Step 7: Normalizing whitespace", 'batch')
+            before = current_text
+            current_text = TextPreprocessor.normalize_whitespace(current_text)
+            current_text = log_transformation("Normalize Whitespace", before, current_text)
+
+            # Step 8: Chunk for TTS
+            self.log_message("🔹 Step 8: Chunking for TTS (max 250 chars/line)", 'batch')
+            before = current_text
+            current_text = TextPreprocessor.chunk_text_for_tts(current_text, max_chars=250)
+            current_text = log_transformation("Chunk for TTS", before, current_text, show_examples=False)
+
             processing_time = time.time() - start_time
+            preprocessed = current_text
 
             processed_size = len(preprocessed)
             processed_lines = preprocessed.count('\n') + 1
@@ -514,17 +569,20 @@ class TTSPreprocessorGUI:
             with open(output_path, 'w', encoding='utf-8') as f:
                 f.write(preprocessed)
 
-            # Calculate statistics
+            # Calculate overall statistics
             size_reduction = ((original_size - processed_size) / original_size * 100) if original_size > 0 else 0
             line_change = ((processed_lines - original_lines) / original_lines * 100) if original_lines > 0 else 0
 
-            # Log results
-            self.log_message("✓ Pre-cleaning complete!", 'success')
-            self.log_message(f"   Processed: {processed_lines:,} lines, {processed_size:,} chars", 'success')
-            self.log_message(f"   Change: {size_reduction:+.1f}% chars, {line_change:+.1f}% lines", 'info')
-            self.log_message(f"   Time: {processing_time:.2f}s", 'info')
-            self.log_message(f"   Saved to: {output_path.name}", 'success')
-            self.log_message("", 'info')
+            # Log final results
+            self.log_message("="*70, 'success')
+            self.log_message("✅ PRE-CLEANING COMPLETE!", 'success')
+            self.log_message("="*70, 'success')
+            self.log_message(f"   Original:   {original_lines:,} lines, {original_size:,} chars", 'info')
+            self.log_message(f"   Processed:  {processed_lines:,} lines, {processed_size:,} chars", 'success')
+            self.log_message(f"   Overall:    {size_reduction:+.1f}% chars, {line_change:+.1f}% lines", 'info')
+            self.log_message(f"   Time:       {processing_time:.2f}s", 'info')
+            self.log_message(f"   Saved to:   {output_path.name}", 'success')
+            self.log_message("="*70, 'success')
 
             # Ask if user wants to use precleaned file as input
             if messagebox.askyesno("Pre-cleaning Complete",
@@ -545,6 +603,80 @@ class TTSPreprocessorGUI:
         except Exception as e:
             self.log_message(f"✗ Pre-cleaning failed: {str(e)}", 'error')
             messagebox.showerror("Pre-cleaning Error", f"Failed to pre-clean file:\n{str(e)}")
+
+    def _show_text_differences(self, before, after, step_name):
+        """Show specific examples of text changes"""
+        import difflib
+
+        # For text deletions, find removed lines
+        before_lines = before.split('\n')
+        after_lines = after.split('\n')
+
+        # Find specific changes
+        changes_shown = 0
+        max_examples = 5  # Limit examples to avoid log spam
+
+        # Use difflib to find differences
+        diff = list(difflib.unified_diff(before_lines[:100], after_lines[:100], lineterm='', n=0))
+
+        deletions = []
+        additions = []
+        modifications = []
+
+        i = 0
+        while i < len(diff):
+            line = diff[i]
+            if line.startswith('---') or line.startswith('+++') or line.startswith('@@'):
+                i += 1
+                continue
+
+            if line.startswith('-') and not line.startswith('---'):
+                deletions.append(line[1:])
+            elif line.startswith('+') and not line.startswith('+++'):
+                additions.append(line[1:])
+
+            i += 1
+
+        # Show deletions
+        if deletions and changes_shown < max_examples:
+            self.log_message("   📉 Text Removed:", 'warning')
+            for deletion in deletions[:max_examples - changes_shown]:
+                if deletion.strip():
+                    preview = deletion[:100] + "..." if len(deletion) > 100 else deletion
+                    self.log_message(f"      - '{preview}'", 'warning')
+                    changes_shown += 1
+                    if changes_shown >= max_examples:
+                        break
+            if len(deletions) > max_examples:
+                self.log_message(f"      ... and {len(deletions) - max_examples} more deletions", 'warning')
+
+        # Show additions (new text)
+        if additions and changes_shown < max_examples:
+            self.log_message("   📈 Text Added:", 'success')
+            for addition in additions[:max_examples - changes_shown]:
+                if addition.strip():
+                    preview = addition[:100] + "..." if len(addition) > 100 else addition
+                    self.log_message(f"      + '{preview}'", 'success')
+                    changes_shown += 1
+                    if changes_shown >= max_examples:
+                        break
+            if len(additions) > max_examples:
+                self.log_message(f"      ... and {len(additions) - max_examples} more additions", 'success')
+
+        # If no specific changes detected but text changed
+        if changes_shown == 0 and before != after:
+            # Find first difference
+            for i, (b_char, a_char) in enumerate(zip(before, after)):
+                if b_char != a_char:
+                    context_start = max(0, i - 20)
+                    context_end = min(len(before), i + 80)
+                    before_snippet = before[context_start:context_end]
+                    after_snippet = after[context_start:min(len(after), context_end)]
+
+                    self.log_message("   🔄 Example Change:", 'info')
+                    self.log_message(f"      Before: '{before_snippet}'", 'warning')
+                    self.log_message(f"      After:  '{after_snippet}'", 'success')
+                    break
     
     def log_message(self, message, tag='info'):
         """Add message to log (thread-safe via queue)"""
