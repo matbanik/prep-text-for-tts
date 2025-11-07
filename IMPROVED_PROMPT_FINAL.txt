@@ -98,7 +98,7 @@ Numbers:
 
 Abbreviations - Expand for Natural Speech:
 Mr. → Mister
-Mrs. → Missus  
+Mrs. → Missus
 Dr. → Doctor
 vs. → versus
 etc. → et cetera
@@ -116,7 +116,67 @@ Special Characters to Remove/Fix:
 - Inconsistent line breaks within paragraphs → join into flowing text
 - Excessive newlines (3+) → reduce to double newline (paragraph break)
 
-5. Preserve Narrative Elements
+Line Break Handling - CRITICAL:
+- Single line breaks (\n) within paragraphs → REMOVE (join into continuous text)
+- Double line breaks (\n\n) between paragraphs → KEEP (these mark paragraph boundaries)
+- Examples:
+  BEFORE: "He walked slowly.\nThe forest was dark."
+  AFTER:  "He walked slowly. The forest was dark."
+
+  BEFORE: "End of paragraph.\n\nStart of new paragraph."
+  AFTER:  "End of paragraph.\n\nStart of new paragraph." (unchanged)
+
+5. TTS Chunking Requirements
+
+CRITICAL - Output Format for TTS Processing:
+Your output must be formatted in chunks of maximum 250 characters each, with each chunk on its own line.
+
+Chunking Rules:
+1. Maximum chunk size: 250 characters
+2. NEVER break mid-sentence
+3. When approaching 250 char limit, find natural breakpoint:
+   - Priority 1: Period (.) - end of sentence
+   - Priority 2: Comma (,) - natural pause
+   - Priority 3: Other punctuation (;, :, —)
+   - Priority 4: Space between words
+4. Each chunk goes on a separate line (single \n between chunks)
+5. Paragraph breaks: Insert empty line (double \n) between paragraph chunks
+
+Chunking Examples:
+
+Example 1 - Simple sentence chunking:
+INPUT: "I didn't want to kill it or even fight with it; I only wanted to drive it off. Since it looked like the only way to risk a thing like that was to kill it outright, I went at it with everything I had. I believe I must have chased it two hundred yards."
+
+OUTPUT:
+I didn't want to kill it or even fight with it; I only wanted to drive it off.
+Since it looked like the only way to risk a thing like that was to kill it outright, I went at it with everything I had.
+I believe I must have chased it two hundred yards.
+
+Example 2 - Long sentence needs comma break:
+INPUT: "The tracker followed the prints through dense undergrowth, over fallen logs covered in moss, past ancient trees that seemed to whisper secrets, and finally arrived at a clearing where the trail ended abruptly."
+
+OUTPUT (assuming first part approaches 250 chars):
+The tracker followed the prints through dense undergrowth, over fallen logs covered in moss,
+past ancient trees that seemed to whisper secrets, and finally arrived at a clearing where the trail ended abruptly.
+
+Example 3 - Paragraph break preservation:
+INPUT: "He watched the animal carefully. It was magnificent.
+
+The next morning, he continued his journey deeper into the wilderness."
+
+OUTPUT:
+He watched the animal carefully. It was magnificent.
+
+The next morning, he continued his journey deeper into the wilderness.
+
+Chunk Size Strategy:
+- Aim for 150-240 characters per chunk (comfortable range)
+- If a sentence is under 250 chars, keep it whole
+- If a sentence exceeds 250 chars, break at comma or semicolon
+- Never create chunks over 250 characters
+- Always break at natural speech pauses
+
+6. Preserve Narrative Elements
 
 CRITICAL - DO NOT CHANGE:
 - Character names
@@ -129,26 +189,33 @@ CRITICAL - DO NOT CHANGE:
 OUTPUT FORMAT:
 
 Requirements:
-1. Output clean text directly to OUTPUT.txt with NO markdown formatting
-2. Preserve paragraph breaks (double newlines)
-3. Maintain consistent spacing
-4. No code blocks, no explanations - just clean text
-5. For Batch 1: Write to OUTPUT.txt
-6. For Batches 2+: Append to OUTPUT.txt (do not duplicate overlap sentences)
+1. Output clean text with NO markdown formatting, NO code blocks, NO explanations
+2. Format as TTS-ready chunks (max 250 characters per line)
+3. Each chunk on its own line (separated by single \n)
+4. Paragraph breaks use empty line (double \n\n between chunks)
+5. Break long sentences at natural pauses (periods, commas, semicolons)
+6. For Batch 1: Output cleaned, chunked text
+7. For Batches 2+: Output only new cleaned, chunked content (do not duplicate overlap sentences)
 
 Quality Checks Per Batch:
 - All page numbers removed
 - All contractions fixed (no spaces around apostrophes)
 - Line-break hyphens resolved
 - Abbreviations expanded
+- Single line breaks removed (text flows continuously within paragraphs)
+- Double line breaks preserved (paragraph boundaries maintained)
+- All chunks are 250 characters or less
+- Chunks break at natural pauses (periods, commas, etc.)
 - No special characters that would disrupt TTS flow
-- Paragraph structure preserved
+- Paragraph structure preserved with empty lines between sections
 - No mid-sentence breaks at chunk boundaries
 - Seamless continuation from previous batch (no duplicated sentences)
 
 EXAMPLE TRANSFORMATIONS:
 
-Input:
+Example 1 - Remove page headers, fix contractions, remove single line breaks, chunk for TTS:
+
+INPUT (raw OCR):
 122 THE TRACKER
 
 I didn ' t want to kill it or even fight with it; I only wanted to
@@ -158,10 +225,30 @@ everything I had.
 
 I believe I must have chased it two hundred yards,
 
-Output:
-I didn't want to kill it or even fight with it; I only wanted to drive it off. Since it looked like the only way to risk a thing like that was to kill it outright, I went at it with everything I had.
+OUTPUT (cleaned and chunked):
+I didn't want to kill it or even fight with it; I only wanted to drive it off.
+Since it looked like the only way to risk a thing like that was to kill it outright, I went at it with everything I had.
 
 I believe I must have chased it two hundred yards,
+
+(Note: Page number removed, contractions fixed, single line breaks removed, text flows naturally, chunks under 250 chars, paragraph break preserved)
+
+Example 2 - Long paragraph with multiple sentences:
+
+INPUT (raw OCR):
+The forest was quiet except for the occasional bird call. He moved
+carefully through the undergrowth, watching for any sign of movement.
+His years of training had taught him patience.
+
+The tracks led deeper into the wilderness, away from civilization.
+
+OUTPUT (cleaned and chunked):
+The forest was quiet except for the occasional bird call.
+He moved carefully through the undergrowth, watching for any sign of movement. His years of training had taught him patience.
+
+The tracks led deeper into the wilderness, away from civilization.
+
+(Note: Single line breaks within paragraph removed, text flows on same line when under 250 chars, paragraph break preserved with empty line)
 
 WORKFLOW:
 
@@ -195,6 +282,11 @@ After all batches processed:
 
 REMEMBER:
 - Use your direct text processing capabilities, not scripts
-- Read the text, apply transformations mentally, output clean text
+- Read the text, apply transformations mentally, output clean chunked text
+- Remove single line breaks (\n) within paragraphs - join text into continuous flow
+- Preserve double line breaks (\n\n) between paragraphs
+- Format output in TTS-ready chunks (max 250 characters per line)
+- Break chunks at natural pauses (periods, commas, semicolons)
 - Maintain context across batches but do not duplicate content
 - Focus on seamless transitions between batches
+- Output ONLY the cleaned, chunked text - NO status messages, NO commentary
