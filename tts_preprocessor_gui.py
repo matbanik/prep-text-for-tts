@@ -1172,6 +1172,7 @@ class TTSPreprocessorGUI:
             self.log_message(f"      - Page headers removed: {ocr_state.stats.get('headers_removed', 0)}", 'info')
             self.log_message(f"      - Whitespace normalized: {ocr_state.stats.get('whitespace_normalized', 0)}", 'info')
             self.log_message(f"   ✓ Stage 2: Deterministic Cleaning", 'success')
+            self.log_message(f"      - OCR artifacts fixed: {ocr_state.stats.get('ocr_artifacts_fixed', 0)}", 'info')
             self.log_message(f"      - Apostrophes fixed: {ocr_state.stats.get('apostrophes_fixed', 0)}", 'info')
             self.log_message(f"      - Word fragments fixed: {ocr_state.stats.get('fragments_fixed', 0)}", 'info')
             self.log_message(f"   ✓ Stage 3: Sentence Reconstruction", 'success')

@@ -217,6 +217,28 @@ class MultiPassOCRProcessor:
         """
         text = state.text
 
+        # Fix OCR artifacts - Replace common OCR misreads
+        # These are legitimate Unicode characters that OCR commonly mistakes
+        ocr_artifacts = {
+            '·': "'",   # Middle dot → apostrophe (common OCR error)
+            '■': '',    # Box
+            '●': '',    # Circle
+            '∙': '',    # Bullet operator
+            '•': '',    # Bullet
+            '′': "'",   # Prime symbol → apostrophe
+            '`': "'",   # Backtick → apostrophe (when used in contractions)
+        }
+
+        artifact_count = 0
+        for artifact, replacement in ocr_artifacts.items():
+            if artifact in text:
+                count = text.count(artifact)
+                text = text.replace(artifact, replacement)
+                artifact_count += count
+                logger.debug(f"  Replaced {count} instances of {repr(artifact)} with {repr(replacement)}")
+
+        state.add_stat('ocr_artifacts_fixed', artifact_count)
+
         # Fix apostrophe spacing (e.g., "don ' t" -> "don't", "child ' s" -> "child's")
         # Handle both straight (') and curly/smart (', ') apostrophes
         original_text = text
