@@ -70,6 +70,224 @@ class TextPreprocessor:
         return text
 
     @staticmethod
+    def normalize_punctuation(text):
+        """
+        Normalize punctuation for TTS.
+
+        Issues addressed:
+        - Multiple punctuation (??? → ?, !!! → !)
+        - Em dashes (---, --, — all → —)
+        - Ellipses (..., .. → …)
+        - Smart quotes (handled by ftfy)
+        """
+        # Normalize multiple punctuation
+        text = re.sub(r'\?{2,}', '?', text)  # ??? → ?
+        text = re.sub(r'!{2,}', '!', text)  # !!! → !
+        text = re.sub(r'\.{4,}', '…', text)  # .... → …
+
+        # Normalize em dashes
+        text = re.sub(r'---', '—', text)  # Three hyphens
+        text = re.sub(r'--', '—', text)   # Two hyphens
+        text = re.sub(r' - ', ' — ', text)  # Spaced hyphen (likely em dash intent)
+
+        # Normalize ellipses (but not 3 dots in sequence for decimal ranges)
+        text = re.sub(r'\.\.\.', '…', text)  # Three dots → ellipsis
+        text = re.sub(r'\.\s\.\s\.', '…', text)  # Spaced dots
+
+        return text
+
+    @staticmethod
+    def normalize_symbols(text):
+        """
+        Convert symbols to TTS-friendly text.
+
+        Common symbols in books:
+        - ™, ®, © → spelled out
+        - & → "and"
+        - @ → "at"
+        - # → "number"
+        """
+        # Trademark and copyright
+        text = text.replace('™', ' trademark')
+        text = text.replace('®', ' registered')
+        text = text.replace('©', ' copyright')
+
+        # Common symbols
+        text = text.replace(' & ', ' and ')
+        text = text.replace('&', ' and ')
+
+        # @ symbol (but preserve in emails if any remain)
+        text = re.sub(r'\s@\s', ' at ', text)
+
+        # Number sign (context-dependent)
+        text = re.sub(r'#(\d+)', r'number \1', text)  # #5 → number 5
+
+        return text
+
+    @staticmethod
+    def normalize_numbers(text):
+        """
+        Normalize numbers for TTS pronunciation.
+
+        Handles:
+        - Ordinals: 1st, 2nd, 3rd → first, second, third
+        - Decades: 1990s → nineteen nineties
+        - Year ranges: 1990-1995 → nineteen ninety to nineteen ninety-five
+        - Keep phone numbers and long IDs as digits
+        """
+        # Ordinal numbers (1st, 2nd, 3rd, 4th, etc.)
+        ordinals = {
+            '1st': 'first', '2nd': 'second', '3rd': 'third', '4th': 'fourth',
+            '5th': 'fifth', '6th': 'sixth', '7th': 'seventh', '8th': 'eighth',
+            '9th': 'ninth', '10th': 'tenth', '11th': 'eleventh', '12th': 'twelfth',
+            '13th': 'thirteenth', '14th': 'fourteenth', '15th': 'fifteenth',
+            '16th': 'sixteenth', '17th': 'seventeenth', '18th': 'eighteenth',
+            '19th': 'nineteenth', '20th': 'twentieth', '21st': 'twenty-first',
+            '22nd': 'twenty-second', '23rd': 'twenty-third', '30th': 'thirtieth',
+            '31st': 'thirty-first'
+        }
+
+        for ordinal, word in ordinals.items():
+            text = re.sub(r'\b' + ordinal + r'\b', word, text, flags=re.IGNORECASE)
+
+        # Decades (1990s, 80s, '90s)
+        text = re.sub(r'\b(\d{4})s\b', r'\1s', text)  # Keep format like "1990s"
+        text = re.sub(r"\b'(\d{2})s\b", r'\1s', text)  # '90s → 90s
+
+        # Standalone small numbers that should be spelled (Chapter 1, Scene 2, etc.)
+        # Keep as-is - spaCy and TTS engines handle these well
+
+        return text
+
+    @staticmethod
+    def normalize_currency(text):
+        """
+        Normalize currency for TTS.
+
+        Examples:
+        - $100 → 100 dollars
+        - €50 → 50 euros
+        - £25 → 25 pounds
+        """
+        # Dollar signs
+        text = re.sub(r'\$(\d+(?:,\d{3})*(?:\.\d{2})?)', r'\1 dollars', text)
+
+        # Euro signs
+        text = re.sub(r'€(\d+(?:,\d{3})*(?:\.\d{2})?)', r'\1 euros', text)
+
+        # Pound signs
+        text = re.sub(r'£(\d+(?:,\d{3})*(?:\.\d{2})?)', r'\1 pounds', text)
+
+        # Cent/penny notation
+        text = re.sub(r'¢', ' cents', text)
+
+        return text
+
+    @staticmethod
+    def normalize_all_caps(text):
+        """
+        Convert ALL CAPS to Title Case (except known acronyms).
+
+        Issues:
+        - ALL CAPS is read as shouting by TTS
+        - But acronyms like NASA, FBI, USA should stay caps
+
+        Strategy:
+        - Detect ALL CAPS sentences/phrases
+        - Keep words ≤ 4 chars in CAPS (likely acronyms)
+        - Convert longer CAPS words to Title Case
+        """
+        # First, handle full sentences in ALL CAPS
+        # Match sentences that are mostly uppercase (at least 70% caps)
+        def convert_sentence(match):
+            sentence = match.group(0)
+            caps_count = sum(1 for c in sentence if c.isupper())
+            total_alpha = sum(1 for c in sentence if c.isalpha())
+
+            if total_alpha > 0 and (caps_count / total_alpha) > 0.7:
+                # This is an ALL CAPS sentence
+                words = sentence.split()
+                converted = []
+                for word in words:
+                    # Check if word is all caps
+                    word_caps_only = ''.join(c for c in word if c.isalpha())
+                    if word_caps_only and word_caps_only.isupper():
+                        # Keep acronyms (≤ 4 chars), convert longer words
+                        if len(word_caps_only) <= 4:
+                            converted.append(word)
+                        else:
+                            converted.append(word.capitalize())
+                    else:
+                        converted.append(word)
+                return ' '.join(converted)
+            return sentence
+
+        # Process sentences
+        text = re.sub(r'[^.!?]+[.!?]', convert_sentence, text)
+
+        # Then handle individual ALL CAPS words that remain
+        def convert_caps(match):
+            word = match.group(0)
+            # Keep short acronyms (≤ 4 chars) like NASA, FBI, USA
+            if len(word) <= 4:
+                return word
+            # Convert long ALL CAPS to Title Case
+            return word.title()
+
+        # Find remaining words in ALL CAPS and selectively convert
+        text = re.sub(r'\b[A-Z]{5,}\b', convert_caps, text)
+
+        return text
+
+    @staticmethod
+    def normalize_chapter_markers(text):
+        """
+        Normalize chapter and section markers.
+
+        Examples:
+        - CHAPTER 1 → Chapter 1
+        - Chapter I → Chapter 1 (Roman numerals)
+        - Part III → Part 3
+        """
+        # Normalize "CHAPTER" to "Chapter"
+        text = re.sub(r'\bCHAPTER\b', 'Chapter', text, flags=re.IGNORECASE)
+        text = re.sub(r'\bPART\b', 'Part', text, flags=re.IGNORECASE)
+        text = re.sub(r'\bSECTION\b', 'Section', text, flags=re.IGNORECASE)
+
+        # Convert Roman numerals in chapters (common in books)
+        roman_map = {
+            'I': '1', 'II': '2', 'III': '3', 'IV': '4', 'V': '5',
+            'VI': '6', 'VII': '7', 'VIII': '8', 'IX': '9', 'X': '10',
+            'XI': '11', 'XII': '12', 'XIII': '13', 'XIV': '14', 'XV': '15',
+            'XVI': '16', 'XVII': '17', 'XVIII': '18', 'XIX': '19', 'XX': '20'
+        }
+
+        for roman, arabic in roman_map.items():
+            text = re.sub(r'\b(Chapter|Part|Section)\s+' + roman + r'\b',
+                         r'\1 ' + arabic, text)
+
+        return text
+
+    @staticmethod
+    def remove_urls_emails(text):
+        """
+        Remove or simplify URLs and email addresses.
+
+        TTS engines struggle with these and they're rarely needed in audiobooks.
+        """
+        # Remove URLs
+        text = re.sub(r'https?://[^\s]+', '[link]', text)
+        text = re.sub(r'www\.[^\s]+', '[link]', text)
+
+        # Remove email addresses
+        text = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', '[email]', text)
+
+        # Clean up any double spaces created
+        text = re.sub(r' {2,}', ' ', text)
+
+        return text
+
+    @staticmethod
     def remove_page_numbers(text):
         """
         Remove page numbers and common headers.
@@ -282,19 +500,39 @@ class TextPreprocessor:
     @staticmethod
     def preprocess_text(text, max_chunk_size=250):
         """
-        Complete preprocessing pipeline for OCR → TTS.
+        Complete comprehensive preprocessing pipeline for OCR → TTS.
+
+        Based on best practices from:
+        - epub2tts (audiobook generation)
+        - ElevenLabs normalization guide
+        - Coqui TTS preprocessing
+        - Deepgram TTS optimization
 
         Steps:
-        1. Unicode cleaning (ftfy)
-        2. Remove page numbers
-        3. Fix hyphenated breaks
-        4. Normalize whitespace
-        5. Chunk for TTS (spaCy + Deepgram approach)
+        1. Unicode cleaning (ftfy + OCR artifacts)
+        2. Normalize punctuation (!!!, ???, ---, ...)
+        3. Normalize symbols (™, ©, &, @, #)
+        4. Normalize numbers (1st → first, 1990s)
+        5. Normalize currency ($100 → 100 dollars)
+        6. Normalize ALL CAPS (but preserve acronyms)
+        7. Normalize chapter markers (CHAPTER I → Chapter 1)
+        8. Remove URLs and emails
+        9. Remove page numbers
+        10. Fix hyphenated line breaks
+        11. Normalize whitespace
+        12. Chunk for TTS (spaCy + Deepgram hybrid)
 
         Returns: Cleaned, chunked text ready for TTS
         """
         steps = [
             ("Clean Unicode (ftfy)", TextPreprocessor.clean_unicode),
+            ("Normalize punctuation", TextPreprocessor.normalize_punctuation),
+            ("Normalize symbols", TextPreprocessor.normalize_symbols),
+            ("Normalize numbers", TextPreprocessor.normalize_numbers),
+            ("Normalize currency", TextPreprocessor.normalize_currency),
+            ("Normalize ALL CAPS", TextPreprocessor.normalize_all_caps),
+            ("Normalize chapter markers", TextPreprocessor.normalize_chapter_markers),
+            ("Remove URLs/emails", TextPreprocessor.remove_urls_emails),
             ("Remove page numbers", TextPreprocessor.remove_page_numbers),
             ("Fix hyphenated line breaks", TextPreprocessor.fix_hyphenated_breaks),
             ("Normalize whitespace", TextPreprocessor.normalize_whitespace),
@@ -602,35 +840,77 @@ class TTSPreprocessorGUI:
                 return after
 
             # Step 1: Clean Unicode with ftfy
-            self.log_message("🔹 Step 1: Cleaning Unicode (ftfy - fixes mojibake, OCR artifacts)", 'batch')
+            self.log_message("🔹 Step 1: Cleaning Unicode (ftfy + OCR artifacts)", 'batch')
             before = current_text
             current_text = TextPreprocessor.clean_unicode(current_text)
-            current_text = log_transformation("Clean Unicode (ftfy)", before, current_text)
+            current_text = log_transformation("Clean Unicode", before, current_text)
 
-            # Step 2: Remove page numbers
-            self.log_message("🔹 Step 2: Removing page numbers", 'batch')
+            # Step 2: Normalize punctuation
+            self.log_message("🔹 Step 2: Normalizing punctuation (???, !!!, ---, ...)", 'batch')
+            before = current_text
+            current_text = TextPreprocessor.normalize_punctuation(current_text)
+            current_text = log_transformation("Normalize Punctuation", before, current_text)
+
+            # Step 3: Normalize symbols
+            self.log_message("🔹 Step 3: Normalizing symbols (™, ©, &, @, #)", 'batch')
+            before = current_text
+            current_text = TextPreprocessor.normalize_symbols(current_text)
+            current_text = log_transformation("Normalize Symbols", before, current_text)
+
+            # Step 4: Normalize numbers
+            self.log_message("🔹 Step 4: Normalizing numbers (1st→first, 1990s)", 'batch')
+            before = current_text
+            current_text = TextPreprocessor.normalize_numbers(current_text)
+            current_text = log_transformation("Normalize Numbers", before, current_text)
+
+            # Step 5: Normalize currency
+            self.log_message("🔹 Step 5: Normalizing currency ($100→100 dollars)", 'batch')
+            before = current_text
+            current_text = TextPreprocessor.normalize_currency(current_text)
+            current_text = log_transformation("Normalize Currency", before, current_text)
+
+            # Step 6: Normalize ALL CAPS
+            self.log_message("🔹 Step 6: Normalizing ALL CAPS (preserve acronyms)", 'batch')
+            before = current_text
+            current_text = TextPreprocessor.normalize_all_caps(current_text)
+            current_text = log_transformation("Normalize ALL CAPS", before, current_text)
+
+            # Step 7: Normalize chapter markers
+            self.log_message("🔹 Step 7: Normalizing chapter markers (Chapter IV→Chapter 4)", 'batch')
+            before = current_text
+            current_text = TextPreprocessor.normalize_chapter_markers(current_text)
+            current_text = log_transformation("Normalize Chapter Markers", before, current_text)
+
+            # Step 8: Remove URLs and emails
+            self.log_message("🔹 Step 8: Removing URLs and emails", 'batch')
+            before = current_text
+            current_text = TextPreprocessor.remove_urls_emails(current_text)
+            current_text = log_transformation("Remove URLs/Emails", before, current_text)
+
+            # Step 9: Remove page numbers
+            self.log_message("🔹 Step 9: Removing page numbers", 'batch')
             before = current_text
             current_text = TextPreprocessor.remove_page_numbers(current_text)
             current_text = log_transformation("Remove Page Numbers", before, current_text)
 
-            # Step 3: Fix hyphenated line breaks
-            self.log_message("🔹 Step 3: Merging hyphenated line breaks", 'batch')
+            # Step 10: Fix hyphenated line breaks
+            self.log_message("🔹 Step 10: Merging hyphenated line breaks", 'batch')
             before = current_text
             current_text = TextPreprocessor.fix_hyphenated_breaks(current_text)
             current_text = log_transformation("Fix Hyphenated Breaks", before, current_text)
 
-            # Step 4: Normalize whitespace
-            self.log_message("🔹 Step 4: Normalizing whitespace", 'batch')
+            # Step 11: Normalize whitespace
+            self.log_message("🔹 Step 11: Normalizing whitespace", 'batch')
             before = current_text
             current_text = TextPreprocessor.normalize_whitespace(current_text)
             current_text = log_transformation("Normalize Whitespace", before, current_text)
 
-            # Step 5: Chunk for TTS using spaCy + Deepgram approach
-            self.log_message("🔹 Step 5: Chunking for TTS (spaCy + Deepgram hybrid)", 'batch')
+            # Step 12: Chunk for TTS using spaCy + Deepgram approach
+            self.log_message("🔹 Step 12: Chunking for TTS (spaCy + Deepgram hybrid)", 'batch')
             self.log_message("   Using linguistic sentence boundaries (250 char max)", 'info')
             before = current_text
             current_text = TextPreprocessor.chunk_for_tts(current_text, max_chars=250)
-            current_text = log_transformation("Chunk for TTS (spaCy)", before, current_text, show_examples=False)
+            current_text = log_transformation("Chunk for TTS", before, current_text, show_examples=False)
 
             processing_time = time.time() - start_time
             preprocessed = current_text

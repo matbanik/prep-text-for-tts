@@ -1,0 +1,31 @@
+10 Chapter 1 The Beginning THIS IS AN ALL CAPS Sentence THAT Should BE Converted! But NASA and FBI should stay caps.
+
+Dr. Tom Brown, Jr. was born in the 1990s and lived at 123 Main St. He made 100 dollars on his first day and 50 euros on his second day. By his third paycheck, he had 1,000 pounds saved up.
+
+Contact us at [email] or visit [link] for more info!
+
+Tom and Jerry were friends? They met on 01/02/2023 at 2:30 PM. The price was 99.99 dollars (what a deal!).
+
+This is a test of hyphenated words that break across
+lines and should be merged together.
+
+"Hello," he said—"how are you doing… fine?"
+
+They discussed topics number 1, number 2, and number 3. The copyright copyright symbol and trademark trademark symbol appeared.
+
+Part 3
+
+The trademark registered product costs 1,234.56 dollars and ships to the U.S.A., U.K., and E.U.
+
+In the '80s and '90s, people used — dashes instead of — em dashes. Shouting IN ALL CAPS IS NOT GOOD FOR TTS.Neither IS THIS Sentence.
+
+The fourth, fifth, and sixth chapters were the best. On the tenth day, everything changed.
+
+Visit [link] and other=test for details at our website.
+
+"I can't believe it's not butter," she said…
+
+Very long sentence that definitely exceeds the 250 character limit we have set for TTS chunking, so this sentence should be split at appropriate comma boundaries to ensure natural speech flow, maintain readability for the text-to-speech engine
+while preserving the meaning and context of the original text, and making sure nothing important is lost in the process.
+
+End.
