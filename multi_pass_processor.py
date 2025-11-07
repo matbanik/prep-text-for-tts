@@ -15,6 +15,8 @@ from typing import List, Tuple, Dict, Set
 from dataclasses import dataclass, field
 from pathlib import Path
 import logging
+import ftfy
+import spacy
 
 
 # Configure logging
@@ -70,6 +72,15 @@ class MultiPassOCRProcessor:
     def __init__(self, enable_logging: bool = True):
         """Initialize processor."""
         self.enable_logging = enable_logging
+
+        # Load spacy model for NLP tasks
+        try:
+            self.nlp = spacy.load("en_core_web_sm")
+            # Disable unnecessary pipes for speed
+            self.nlp.disable_pipes("ner", "lemmatizer")
+        except OSError:
+            logger.warning("Spacy model not found. Install with: python -m spacy download en_core_web_sm")
+            self.nlp = None
 
         # Patterns for page headers (from pseudologic)
         self.header_patterns = [
@@ -142,6 +153,10 @@ class MultiPassOCRProcessor:
         Focuses on removing meaningless OCR artifacts.
         """
         text = state.text
+
+        # Use ftfy to fix text encoding issues, mojibake, and Unicode problems
+        text = ftfy.fix_text(text)
+        logger.debug("  Applied ftfy text normalization")
 
         # Normalize line endings (handle CRLF, CR, LF)
         text = text.replace('\r\n', '\n').replace('\r', '\n')
@@ -216,6 +231,11 @@ class MultiPassOCRProcessor:
 
         state.add_stat('apostrophes_fixed', apostrophe_fixes)
         logger.debug(f"  Fixed {apostrophe_fixes} apostrophe spacing issues")
+
+        # Fix quote spacing - ensure spaces inside quotes: "word" → " word "
+        # Pattern: quote + non-space character → quote + space + character
+        text = re.sub(r'"([^\s"])', r'" \1', text)  # Add space after opening quote
+        text = re.sub(r'([^\s"])"', r'\1 "', text)  # Add space before closing quote
 
         # Fix word fragments across lines
         text, fragments_fixed = self._fix_word_fragments(text)
@@ -334,10 +354,16 @@ class MultiPassOCRProcessor:
             ("waking along", "walking along"),
             ("Juncoes", "Juncos"),  # Proper spelling
             ("Wolfs", "Wolf's"),  # Possessive
+            ("Hfe", "Life"),  # OCR confusion: H + fe
         ]
 
         for error, correction in corrections:
             text = text.replace(error, correction)
+
+        # Fix OCR confusion: 'll' being read as 'U' (capital U)
+        # Examples: "stiU" → "still", "AU" → "All", "caU" → "call"
+        # Pattern: letter + U + word boundary
+        text = re.sub(r'(\w+)U\b', lambda m: m.group(1) + 'll', text)
 
         return text
 
@@ -347,15 +373,16 @@ class MultiPassOCRProcessor:
 
     def stage3_sentence_reconstruction(self, state: ProcessingState) -> ProcessingState:
         """
-        Stage 3: Merge lines into paragraphs, then sentences.
+        Stage 3: Merge lines into paragraphs.
 
         Groups lines into paragraphs (blank line = paragraph boundary),
         then merges lines within each paragraph into complete sentences.
+        Preserves existing paragraph structure from INPUT.
         """
         text = state.text
         lines = text.split('\n')
 
-        paragraph_buffer = ""  # Buffer for current paragraph
+        paragraph_buffer = ""
         output_lines = []
         lines_merged = 0
 
