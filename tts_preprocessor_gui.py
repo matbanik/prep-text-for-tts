@@ -404,17 +404,17 @@ NOW PROCESS THIS NEW TEXT:
 Remember: Only output the cleaned NEW text, not the context."""
             else:
                 user_message = text_batch
-            
+
             # Load system prompt
             with open(self.prompt_file.get(), 'r', encoding='utf-8') as f:
                 system_prompt = f.read()
-            
+
             # Create client
             client = openai.OpenAI(
                 base_url=self.lm_host.get(),
                 api_key="not-needed"
             )
-            
+
             # Make request
             response = client.chat.completions.create(
                 model=self.model_name.get(),
@@ -426,15 +426,16 @@ Remember: Only output the cleaned NEW text, not the context."""
                 max_tokens=self.max_tokens.get(),
                 seed=self.seed.get()
             )
-            
+
             cleaned_text = response.choices[0].message.content
             next_context = self.extract_last_sentences(cleaned_text, 3)
-            
-            return cleaned_text, next_context
-            
+
+            # Return stats for logging: (cleaned_text, next_context, input_size, output_size)
+            return cleaned_text, next_context, len(user_message), len(cleaned_text)
+
         except Exception as e:
             self.log_message(f"✗ Error processing batch {batch_num}: {str(e)}", 'error')
-            return None, context
+            return None, context, 0, 0
     
     def process_batches(self):
         """Main processing loop (runs in separate thread)"""
@@ -496,13 +497,13 @@ Remember: Only output the cleaned NEW text, not the context."""
                 # Process batch
                 self.log_message(f"   ⚙ Processing with {self.model_name.get()}...", 'info')
                 batch_start_time = time.time()
-                
-                cleaned, next_context = self.process_single_batch(
-                    batch_text, 
-                    batch_num, 
+
+                cleaned, next_context, llm_input_size, llm_output_size = self.process_single_batch(
+                    batch_text,
+                    batch_num,
                     self.previous_context
                 )
-                
+
                 batch_time = time.time() - batch_start_time
 
                 if cleaned:
@@ -510,9 +511,31 @@ Remember: Only output the cleaned NEW text, not the context."""
                     output_line_count = len(cleaned.splitlines())
                     output_char_count = len(cleaned)
 
-                    # Calculate reductions
+                    # Calculate reductions from original batch text to cleaned output
                     char_reduction = ((input_char_count - output_char_count) / input_char_count * 100) if input_char_count > 0 else 0
                     line_reduction = ((input_line_count - output_line_count) / input_line_count * 100) if input_line_count > 0 else 0
+
+                    # Calculate LLM input vs output change
+                    llm_change = ((llm_output_size - llm_input_size) / llm_input_size * 100) if llm_input_size > 0 else 0
+
+                    # Log LLM input/output comparison
+                    self.log_message(f"   📤 Sent to LLM:      {llm_input_size} chars", 'info')
+                    self.log_message(f"   📥 Received from LLM: {llm_output_size} chars ({llm_change:+.1f}%)", 'info')
+
+                    # Validate LLM response size - check for excessive differences
+                    # Allow for reasonable variation but flag suspicious changes
+                    if llm_change > 100:  # Output is more than 2x the input
+                        self.log_message(f"   ✗ CRITICAL ERROR: LLM response is {llm_change:+.1f}% larger than input!", 'error')
+                        self.log_message(f"   ✗ Expected ~{llm_input_size} chars, received {llm_output_size} chars", 'error')
+                        self.log_message(f"   ✗ This indicates the LLM may be hallucinating or adding unwanted content", 'error')
+                        self.log_message(f"   ⏹ Stopping processing to prevent data contamination", 'error')
+                        break
+                    elif llm_change < -50:  # Output is less than half the input
+                        self.log_message(f"   ✗ CRITICAL ERROR: LLM response is {llm_change:.1f}% smaller than input!", 'error')
+                        self.log_message(f"   ✗ Expected ~{llm_input_size} chars, received {llm_output_size} chars", 'error')
+                        self.log_message(f"   ✗ This indicates the LLM may be truncating or losing content", 'error')
+                        self.log_message(f"   ⏹ Stopping processing to prevent data loss", 'error')
+                        break
 
                     # Update output preview
                     self.output_preview.delete(1.0, tk.END)
@@ -533,12 +556,17 @@ Remember: Only output the cleaned NEW text, not the context."""
 
                     # Log results with comparison
                     self.log_message(f"   ✓ Batch complete in {batch_time:.1f}s", 'success')
-                    self.log_message(f"   Output: {output_line_count} lines, {output_char_count} chars", 'success')
-                    self.log_message(f"   Change: {char_reduction:+.1f}% chars, {line_reduction:+.1f}% lines", 'info')
+                    self.log_message(f"   Batch text: {input_line_count} lines, {input_char_count} chars", 'info')
+                    self.log_message(f"   Output:     {output_line_count} lines, {output_char_count} chars", 'success')
+                    self.log_message(f"   Change:     {char_reduction:+.1f}% chars, {line_reduction:+.1f}% lines", 'info')
 
-                    # Warn if excessive data loss
+                    # Warn if excessive data loss from batch text to output
                     if char_reduction > 15:
-                        self.log_message(f"   ⚠ WARNING: Output reduced by {char_reduction:.1f}% - check for truncation!", 'warning')
+                        self.log_message(f"   ⚠ WARNING: Output reduced by {char_reduction:.1f}% from batch - check for truncation!", 'warning')
+                    elif llm_change > 50:
+                        self.log_message(f"   ⚠ WARNING: LLM output increased by {llm_change:+.1f}% - review for added content", 'warning')
+                    elif llm_change < -30:
+                        self.log_message(f"   ⚠ WARNING: LLM output decreased by {llm_change:.1f}% - review for lost content", 'warning')
 
                     # Show context (filtered)
                     if next_context:
