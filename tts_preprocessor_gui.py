@@ -14,6 +14,213 @@ import json
 from pathlib import Path
 from datetime import datetime
 
+# ============================================================================
+# PREPROCESSING MODULE - Deterministic Text Cleaning
+# ============================================================================
+
+class TextPreprocessor:
+    """Handles deterministic text cleaning tasks"""
+
+    # Abbreviation expansions
+    ABBREVIATIONS = {
+        r'\bMr\.': 'Mister',
+        r'\bMrs\.': 'Missus',
+        r'\bMs\.': 'Miss',
+        r'\bDr\.': 'Doctor',
+        r'\bProf\.': 'Professor',
+        r'\bSr\.': 'Senior',
+        r'\bJr\.': 'Junior',
+        r'\bvs\.': 'versus',
+        r'\betc\.': 'et cetera',
+        r'\be\.g\.': 'for example',
+        r'\bi\.e\.': 'that is',
+        r'\bph\.d\.': 'PhD',
+        r'\bPhD\.': 'PhD',
+    }
+
+    @staticmethod
+    def remove_page_numbers(text):
+        """Remove page numbers and headers"""
+        # Remove lines with just numbers
+        text = re.sub(r'^\s*\d+\s*$', '', text, flags=re.MULTILINE)
+
+        # Remove common headers
+        text = re.sub(r'^\s*\d+\s+(THE\s+TRACKER|THETRACKER)\s*$', '', text, flags=re.MULTILINE)
+        text = re.sub(r'^\s*(THE\s+TRACKER|THETRACKER)\s+\d+\s*$', '', text, flags=re.MULTILINE)
+        text = re.sub(r'^\s*[A-Z][a-z]+\s+\d+\s*$', '', text, flags=re.MULTILINE)  # "Search 227"
+        text = re.sub(r'^\s*\d+\s+[A-Z][a-z]+\s*$', '', text, flags=re.MULTILINE)  # "122 Search"
+
+        return text
+
+    @staticmethod
+    def fix_contractions(text):
+        """Fix OCR spacing errors in contractions"""
+        # Fix spaces around apostrophes in contractions
+        text = re.sub(r"(\w+)\s+'\s+(\w+)", r"\1'\2", text)
+        text = re.sub(r"(\w+)'\s+(\w+)", r"\1'\2", text)
+        text = re.sub(r"(\w+)\s+'(\w+)", r"\1'\2", text)
+
+        # Fix common double contractions
+        text = re.sub(r"doesn't't", "doesn't", text)
+
+        return text
+
+    @staticmethod
+    def fix_hyphenated_breaks(text):
+        """Merge words broken across lines with hyphens"""
+        # Common OCR line-break patterns
+        text = re.sub(r'(\w+)-\s*\n\s*(\w+)', lambda m: m.group(1) + m.group(2), text)
+
+        return text
+
+    @staticmethod
+    def expand_abbreviations(text):
+        """Expand abbreviations for TTS"""
+        for pattern, replacement in TextPreprocessor.ABBREVIATIONS.items():
+            text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+
+        return text
+
+    @staticmethod
+    def remove_unicode_artifacts(text):
+        """Remove common OCR unicode artifacts"""
+        # Replace or remove common artifacts
+        text = text.replace('·', "'")  # Middle dot often used for apostrophes
+        text = text.replace('■', '')
+        text = text.replace('●', '')
+        text = text.replace('∙', '')
+        text = text.replace('•', '')
+
+        # Normalize quotes
+        text = text.replace('"', '"').replace('"', '"')
+        text = text.replace(''', "'").replace(''', "'")
+
+        return text
+
+    @staticmethod
+    def normalize_line_breaks(text):
+        """Remove single line breaks, keep paragraph breaks"""
+        # First, normalize all line endings to \n
+        text = text.replace('\r\n', '\n').replace('\r', '\n')
+
+        # Replace 3+ newlines with exactly 2 (paragraph break)
+        text = re.sub(r'\n{3,}', '\n\n', text)
+
+        # Replace single newlines within paragraphs with space
+        # But keep double newlines (paragraph breaks)
+        lines = text.split('\n\n')
+        cleaned_paragraphs = []
+
+        for paragraph in lines:
+            # Within each paragraph, replace single newlines with spaces
+            cleaned = ' '.join(line.strip() for line in paragraph.split('\n') if line.strip())
+            if cleaned:
+                cleaned_paragraphs.append(cleaned)
+
+        return '\n\n'.join(cleaned_paragraphs)
+
+    @staticmethod
+    def normalize_whitespace(text):
+        """Normalize multiple spaces to single space"""
+        # Replace multiple spaces with single space
+        text = re.sub(r' {2,}', ' ', text)
+
+        # Remove spaces at start/end of lines
+        text = re.sub(r' +$', '', text, flags=re.MULTILINE)
+        text = re.sub(r'^ +', '', text, flags=re.MULTILINE)
+
+        return text
+
+    @staticmethod
+    def chunk_text_for_tts(text, max_chars=250):
+        """
+        Split text into TTS-ready chunks with max character limit.
+        Breaks at sentence boundaries, then comma boundaries if needed.
+        Preserves paragraph breaks.
+        """
+        paragraphs = text.split('\n\n')
+        chunked_output = []
+
+        for paragraph in paragraphs:
+            if not paragraph.strip():
+                continue
+
+            # Split paragraph into sentences
+            sentences = re.split(r'([.!?]+)', paragraph)
+
+            # Recombine sentences with their punctuation
+            full_sentences = []
+            for i in range(0, len(sentences)-1, 2):
+                if i+1 < len(sentences):
+                    full_sentences.append(sentences[i] + sentences[i+1])
+                else:
+                    full_sentences.append(sentences[i])
+
+            # Process each sentence
+            paragraph_chunks = []
+            for sentence in full_sentences:
+                sentence = sentence.strip()
+                if not sentence:
+                    continue
+
+                # If sentence fits in max_chars, use it as-is
+                if len(sentence) <= max_chars:
+                    paragraph_chunks.append(sentence)
+                else:
+                    # Sentence too long, split at commas
+                    parts = sentence.split(',')
+                    current_chunk = ""
+
+                    for part in parts:
+                        part = part.strip()
+
+                        # If adding this part exceeds limit, save current chunk
+                        if current_chunk and len(current_chunk + ', ' + part) > max_chars:
+                            paragraph_chunks.append(current_chunk.strip())
+                            current_chunk = part
+                        else:
+                            if current_chunk:
+                                current_chunk += ', ' + part
+                            else:
+                                current_chunk = part
+
+                    # Add remaining chunk
+                    if current_chunk:
+                        paragraph_chunks.append(current_chunk.strip())
+
+            # Add paragraph chunks with empty line after paragraph
+            chunked_output.extend(paragraph_chunks)
+            chunked_output.append('')  # Empty line for paragraph break
+
+        # Remove trailing empty line
+        while chunked_output and not chunked_output[-1]:
+            chunked_output.pop()
+
+        return '\n'.join(chunked_output)
+
+    @staticmethod
+    def preprocess_text(text, max_chunk_size=250):
+        """
+        Apply all preprocessing steps in order.
+        Returns cleaned and chunked text ready for TTS or LLM processing.
+        """
+        steps = [
+            ("Removing page numbers", TextPreprocessor.remove_page_numbers),
+            ("Fixing contractions", TextPreprocessor.fix_contractions),
+            ("Fixing hyphenated line breaks", TextPreprocessor.fix_hyphenated_breaks),
+            ("Expanding abbreviations", TextPreprocessor.expand_abbreviations),
+            ("Removing unicode artifacts", TextPreprocessor.remove_unicode_artifacts),
+            ("Normalizing line breaks", TextPreprocessor.normalize_line_breaks),
+            ("Normalizing whitespace", TextPreprocessor.normalize_whitespace),
+            ("Chunking for TTS", lambda t: TextPreprocessor.chunk_text_for_tts(t, max_chunk_size)),
+        ]
+
+        result = text
+        for step_name, step_func in steps:
+            result = step_func(result)
+
+        return result
+
 class TTSPreprocessorGUI:
     def __init__(self, root):
         self.root = root
@@ -128,16 +335,22 @@ class TTSPreprocessorGUI:
         # Control Buttons
         button_frame = ttk.LabelFrame(control_frame, text="Controls", padding=10)
         button_frame.pack(side=tk.LEFT, fill=tk.BOTH, padx=5)
-        
-        self.start_btn = ttk.Button(button_frame, text="▶ Start Processing", 
+
+        self.preclean_btn = ttk.Button(button_frame, text="🔧 Pre-clean Input",
+                                       command=self.preclean_input)
+        self.preclean_btn.pack(fill=tk.X, pady=2)
+
+        ttk.Separator(button_frame, orient='horizontal').pack(fill=tk.X, pady=5)
+
+        self.start_btn = ttk.Button(button_frame, text="▶ Start Processing",
                                     command=self.start_processing, style='Accent.TButton')
         self.start_btn.pack(fill=tk.X, pady=2)
-        
-        self.pause_btn = ttk.Button(button_frame, text="⏸ Pause", 
+
+        self.pause_btn = ttk.Button(button_frame, text="⏸ Pause",
                                     command=self.pause_processing, state=tk.DISABLED)
         self.pause_btn.pack(fill=tk.X, pady=2)
-        
-        self.stop_btn = ttk.Button(button_frame, text="⏹ Stop", 
+
+        self.stop_btn = ttk.Button(button_frame, text="⏹ Stop",
                                    command=self.stop_processing, state=tk.DISABLED)
         self.stop_btn.pack(fill=tk.X, pady=2)
         
@@ -239,20 +452,99 @@ class TTSPreprocessorGUI:
                 base_url=self.lm_host.get(),
                 api_key="not-needed"
             )
-            
+
             # Try a simple completion
             response = client.chat.completions.create(
                 model=self.model_name.get(),
                 messages=[{"role": "user", "content": "Hello"}],
                 max_tokens=10
             )
-            
+
             self.log_message("✓ Connection successful! LM Studio is ready.", 'success')
             messagebox.showinfo("Connection Test", "✓ Successfully connected to LM Studio!")
-            
+
         except Exception as e:
             self.log_message(f"✗ Connection failed: {str(e)}", 'error')
             messagebox.showerror("Connection Test", f"Failed to connect:\n{str(e)}\n\nMake sure LM Studio Local Server is running!")
+
+    def preclean_input(self):
+        """Pre-clean input file with deterministic text processing"""
+        if not self.input_file.get():
+            messagebox.showerror("Error", "Please select an input file first!")
+            return
+
+        try:
+            self.log_message("="*70, 'info')
+            self.log_message("🔧 STARTING DETERMINISTIC PRE-CLEANING", 'batch')
+            self.log_message("="*70, 'info')
+
+            # Read input file
+            input_path = Path(self.input_file.get())
+            self.log_message(f"📖 Reading: {input_path.name}", 'info')
+
+            with open(input_path, 'r', encoding='utf-8') as f:
+                original_text = f.read()
+
+            original_size = len(original_text)
+            original_lines = original_text.count('\n') + 1
+
+            self.log_message(f"   Original: {original_lines:,} lines, {original_size:,} chars", 'info')
+            self.log_message("", 'info')
+
+            # Apply preprocessing
+            self.log_message("⚙ Applying transformations:", 'info')
+            self.log_message("   • Removing page numbers and headers", 'info')
+            self.log_message("   • Fixing contractions (didn ' t → didn't)", 'info')
+            self.log_message("   • Merging hyphenated line breaks", 'info')
+            self.log_message("   • Expanding abbreviations (Mr. → Mister)", 'info')
+            self.log_message("   • Removing unicode artifacts (·, ■, ●)", 'info')
+            self.log_message("   • Normalizing line breaks (single → join, double → keep)", 'info')
+            self.log_message("   • Chunking for TTS (max 250 chars/line)", 'info')
+            self.log_message("", 'info')
+
+            start_time = time.time()
+            preprocessed = TextPreprocessor.preprocess_text(original_text, max_chunk_size=250)
+            processing_time = time.time() - start_time
+
+            processed_size = len(preprocessed)
+            processed_lines = preprocessed.count('\n') + 1
+
+            # Save to precleaned file
+            output_path = input_path.parent / f"{input_path.stem}_PRECLEANED.txt"
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(preprocessed)
+
+            # Calculate statistics
+            size_reduction = ((original_size - processed_size) / original_size * 100) if original_size > 0 else 0
+            line_change = ((processed_lines - original_lines) / original_lines * 100) if original_lines > 0 else 0
+
+            # Log results
+            self.log_message("✓ Pre-cleaning complete!", 'success')
+            self.log_message(f"   Processed: {processed_lines:,} lines, {processed_size:,} chars", 'success')
+            self.log_message(f"   Change: {size_reduction:+.1f}% chars, {line_change:+.1f}% lines", 'info')
+            self.log_message(f"   Time: {processing_time:.2f}s", 'info')
+            self.log_message(f"   Saved to: {output_path.name}", 'success')
+            self.log_message("", 'info')
+
+            # Ask if user wants to use precleaned file as input
+            if messagebox.askyesno("Pre-cleaning Complete",
+                                   f"Pre-cleaning complete!\n\n"
+                                   f"Original: {original_lines:,} lines, {original_size:,} chars\n"
+                                   f"Cleaned: {processed_lines:,} lines, {processed_size:,} chars\n"
+                                   f"Change: {size_reduction:+.1f}% size\n\n"
+                                   f"Saved to: {output_path.name}\n\n"
+                                   f"Use precleaned file as input?"):
+                self.input_file.set(str(output_path))
+                self.log_message(f"✓ Input file updated to: {output_path.name}", 'success')
+
+                # Update preview
+                preview_text = preprocessed[:1000] + "..." if len(preprocessed) > 1000 else preprocessed
+                self.input_preview.delete(1.0, tk.END)
+                self.input_preview.insert(1.0, preview_text)
+
+        except Exception as e:
+            self.log_message(f"✗ Pre-cleaning failed: {str(e)}", 'error')
+            messagebox.showerror("Pre-cleaning Error", f"Failed to pre-clean file:\n{str(e)}")
     
     def log_message(self, message, tag='info'):
         """Add message to log (thread-safe via queue)"""
