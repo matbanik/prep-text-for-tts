@@ -269,6 +269,130 @@ class TextPreprocessor:
         return text
 
     @staticmethod
+    def fix_orphaned_apostrophes(text):
+        """
+        Fix OCR errors where apostrophes appear before words incorrectly.
+
+        Common OCR issues:
+        - people'and → people and
+        - me'from → me from
+        - feeling'both → feeling both
+
+        These are misread quotes/dialogue marks, not contractions.
+        """
+        # Remove apostrophe before common words (not contractions)
+        # Pattern: word + apostrophe + space/newline + lowercase word
+        text = re.sub(r"(\w+)'\s*\n?\s*([a-z])", r"\1 \2", text)
+
+        # Also fix apostrophe at end of line before next word
+        text = re.sub(r"'(\s*\n\s*)([a-z])", r"\1\2", text)
+
+        return text
+
+    @staticmethod
+    def fix_split_words(text):
+        """
+        Fix only TRUE split words (word fragments across lines).
+
+        OCR often breaks words at line endings:
+        - "hun-\ndred" → "hundred" (with hyphen)
+        - "hun\ndred" → "hundred" (fragment without hyphen)
+        - "are\nsearching" → "are searching" (complete words - DON'T merge)
+
+        Strategy:
+        1. Always fix hyphenated breaks (unambiguous)
+        2. For non-hyphenated: Only merge if first part is NOT a common complete word
+        """
+        # Fix hyphenated line breaks (always merge)
+        text = re.sub(r'(\w+)-\s*\n\s*(\w+)', lambda m: m.group(1) + m.group(2), text)
+
+        # Common complete English words that should NOT be merged with next line
+        # (These are complete words, not fragments)
+        COMPLETE_WORDS = {
+            'a', 'an', 'the', 'and', 'or', 'but', 'if', 'of', 'to', 'in', 'on', 'at', 'by',
+            'for', 'with', 'from', 'up', 'out', 'as', 'is', 'are', 'was', 'were', 'be',
+            'he', 'she', 'it', 'we', 'they', 'you', 'i', 'me', 'him', 'her', 'us', 'them',
+            'his', 'her', 'its', 'our', 'their', 'my', 'your', 'this', 'that', 'these', 'those',
+            'all', 'some', 'any', 'many', 'much', 'more', 'most', 'own', 'can', 'will', 'would',
+            'could', 'should', 'may', 'might', 'must', 'shall', 'do', 'does', 'did', 'have',
+            'has', 'had', 'who', 'what', 'when', 'where', 'why', 'how', 'than', 'then', 'now',
+            'so', 'not', 'no', 'yes', 'like', 'just', 'part', 'make', 'get', 'go', 'come',
+            'take', 'see', 'know', 'think', 'look', 'want', 'give', 'use', 'find', 'tell',
+            'ask', 'work', 'seem', 'feel', 'try', 'leave', 'call', 'even', 'also', 'only',
+            'new', 'good', 'old', 'great', 'first', 'last', 'long', 'little', 'such', 'other',
+            'between', 'under', 'over', 'through', 'during', 'before', 'after', 'above', 'below',
+            'both', 'each', 'few', 'every', 'either', 'neither', 'whether', 'because', 'since',
+            'while', 'until', 'unless', 'though', 'although', 'still', 'yet', 'already'
+        }
+
+        def merge_if_fragment(match):
+            first_part = match.group(1)
+            second_part = match.group(2)
+
+            # Don't merge if first part is a known complete word
+            if first_part.lower() in COMPLETE_WORDS:
+                return match.group(0)  # Keep newline
+
+            # Merge if first part appears to be a word fragment
+            return first_part + second_part
+
+        text = re.sub(r'(\w+)\n(\w+)', merge_if_fragment, text)
+
+        return text
+
+    @staticmethod
+    def merge_sentence_lines(text):
+        """
+        Merge lines within sentences (preserving paragraph breaks).
+
+        Issue: OCR creates newlines mid-sentence:
+        "John Muir said, 'If I have to worship God,
+        it's going to be in a temple'"
+
+        Should be:
+        "John Muir said, 'If I have to worship God, it's going to be in a temple'"
+
+        Strategy: Don't use placeholder - instead track paragraph breaks
+        and don't merge across them.
+        """
+        lines = text.split('\n')
+        merged_lines = []
+        i = 0
+
+        while i < len(lines):
+            current_line = lines[i].rstrip()
+
+            # Check if this is a blank line (paragraph separator) - keep it as-is
+            if not current_line.strip():
+                merged_lines.append(current_line)
+                i += 1
+                continue
+
+            # Check if this line ends with sentence-ending punctuation
+            ends_with_punctuation = bool(re.search(r'[.!?;]\s*["\']?\s*$', current_line))
+
+            # If not ending punctuation and there's a next line, try to merge
+            if not ends_with_punctuation and i + 1 < len(lines):
+                next_line = lines[i + 1].lstrip()
+
+                # Don't merge if next line is empty (paragraph break)
+                if not next_line:
+                    merged_lines.append(current_line)
+                    i += 1
+                    continue
+
+                # Only merge if next line doesn't start with capital
+                if not next_line[0].isupper():
+                    merged_lines.append(current_line + ' ' + next_line)
+                    i += 2
+                    continue
+
+            merged_lines.append(current_line)
+            i += 1
+
+        return '\n'.join(merged_lines)
+
+    @staticmethod
     def remove_urls_emails(text):
         """
         Remove or simplify URLs and email addresses.
@@ -510,22 +634,27 @@ class TextPreprocessor:
 
         Steps:
         1. Unicode cleaning (ftfy + OCR artifacts)
-        2. Normalize punctuation (!!!, ???, ---, ...)
-        3. Normalize symbols (™, ©, &, @, #)
-        4. Normalize numbers (1st → first, 1990s)
-        5. Normalize currency ($100 → 100 dollars)
-        6. Normalize ALL CAPS (but preserve acronyms)
-        7. Normalize chapter markers (CHAPTER I → Chapter 1)
-        8. Remove URLs and emails
-        9. Remove page numbers
-        10. Fix hyphenated line breaks
-        11. Normalize whitespace
-        12. Chunk for TTS (spaCy + Deepgram hybrid)
+        2. Fix orphaned apostrophes (people'and → people and)  ← NEW
+        3. Fix split words (hun\ndred → hundred)                ← NEW
+        4. Merge sentence lines (mid-sentence newlines)         ← NEW
+        5. Normalize punctuation (!!!, ???, ---, ...)
+        6. Normalize symbols (™, ©, &, @, #)
+        7. Normalize numbers (1st → first, 1990s)
+        8. Normalize currency ($100 → 100 dollars)
+        9. Normalize ALL CAPS (but preserve acronyms)
+        10. Normalize chapter markers (CHAPTER I → Chapter 1)
+        11. Remove URLs and emails
+        12. Remove page numbers
+        13. Normalize whitespace
+        14. Chunk for TTS (spaCy + Deepgram hybrid)
 
         Returns: Cleaned, chunked text ready for TTS
         """
         steps = [
             ("Clean Unicode (ftfy)", TextPreprocessor.clean_unicode),
+            ("Fix orphaned apostrophes", TextPreprocessor.fix_orphaned_apostrophes),
+            ("Fix split words", TextPreprocessor.fix_split_words),
+            ("Merge sentence lines", TextPreprocessor.merge_sentence_lines),
             ("Normalize punctuation", TextPreprocessor.normalize_punctuation),
             ("Normalize symbols", TextPreprocessor.normalize_symbols),
             ("Normalize numbers", TextPreprocessor.normalize_numbers),
@@ -534,7 +663,6 @@ class TextPreprocessor:
             ("Normalize chapter markers", TextPreprocessor.normalize_chapter_markers),
             ("Remove URLs/emails", TextPreprocessor.remove_urls_emails),
             ("Remove page numbers", TextPreprocessor.remove_page_numbers),
-            ("Fix hyphenated line breaks", TextPreprocessor.fix_hyphenated_breaks),
             ("Normalize whitespace", TextPreprocessor.normalize_whitespace),
             ("Chunk for TTS (spaCy + hybrid)", lambda t: TextPreprocessor.chunk_for_tts(t, max_chunk_size)),
         ]
@@ -845,68 +973,80 @@ class TTSPreprocessorGUI:
             current_text = TextPreprocessor.clean_unicode(current_text)
             current_text = log_transformation("Clean Unicode", before, current_text)
 
-            # Step 2: Normalize punctuation
-            self.log_message("🔹 Step 2: Normalizing punctuation (???, !!!, ---, ...)", 'batch')
+            # Step 2: Fix orphaned apostrophes
+            self.log_message("🔹 Step 2: Fixing orphaned apostrophes (people'and→people and)", 'batch')
+            before = current_text
+            current_text = TextPreprocessor.fix_orphaned_apostrophes(current_text)
+            current_text = log_transformation("Fix Orphaned Apostrophes", before, current_text)
+
+            # Step 3: Fix split words
+            self.log_message("🔹 Step 3: Fixing split words (hun\\ndred→hundred)", 'batch')
+            before = current_text
+            current_text = TextPreprocessor.fix_split_words(current_text)
+            current_text = log_transformation("Fix Split Words", before, current_text)
+
+            # Step 4: Merge sentence lines
+            self.log_message("🔹 Step 4: Merging sentence lines (remove mid-sentence newlines)", 'batch')
+            before = current_text
+            current_text = TextPreprocessor.merge_sentence_lines(current_text)
+            current_text = log_transformation("Merge Sentence Lines", before, current_text)
+
+            # Step 5: Normalize punctuation
+            self.log_message("🔹 Step 5: Normalizing punctuation (???, !!!, ---, ...)", 'batch')
             before = current_text
             current_text = TextPreprocessor.normalize_punctuation(current_text)
             current_text = log_transformation("Normalize Punctuation", before, current_text)
 
-            # Step 3: Normalize symbols
-            self.log_message("🔹 Step 3: Normalizing symbols (™, ©, &, @, #)", 'batch')
+            # Step 6: Normalize symbols
+            self.log_message("🔹 Step 6: Normalizing symbols (™, ©, &, @, #)", 'batch')
             before = current_text
             current_text = TextPreprocessor.normalize_symbols(current_text)
             current_text = log_transformation("Normalize Symbols", before, current_text)
 
-            # Step 4: Normalize numbers
-            self.log_message("🔹 Step 4: Normalizing numbers (1st→first, 1990s)", 'batch')
+            # Step 7: Normalize numbers
+            self.log_message("🔹 Step 7: Normalizing numbers (1st→first, 1990s)", 'batch')
             before = current_text
             current_text = TextPreprocessor.normalize_numbers(current_text)
             current_text = log_transformation("Normalize Numbers", before, current_text)
 
-            # Step 5: Normalize currency
-            self.log_message("🔹 Step 5: Normalizing currency ($100→100 dollars)", 'batch')
+            # Step 8: Normalize currency
+            self.log_message("🔹 Step 8: Normalizing currency ($100→100 dollars)", 'batch')
             before = current_text
             current_text = TextPreprocessor.normalize_currency(current_text)
             current_text = log_transformation("Normalize Currency", before, current_text)
 
-            # Step 6: Normalize ALL CAPS
-            self.log_message("🔹 Step 6: Normalizing ALL CAPS (preserve acronyms)", 'batch')
+            # Step 9: Normalize ALL CAPS
+            self.log_message("🔹 Step 9: Normalizing ALL CAPS (preserve acronyms)", 'batch')
             before = current_text
             current_text = TextPreprocessor.normalize_all_caps(current_text)
             current_text = log_transformation("Normalize ALL CAPS", before, current_text)
 
-            # Step 7: Normalize chapter markers
-            self.log_message("🔹 Step 7: Normalizing chapter markers (Chapter IV→Chapter 4)", 'batch')
+            # Step 10: Normalize chapter markers
+            self.log_message("🔹 Step 10: Normalizing chapter markers (Chapter IV→Chapter 4)", 'batch')
             before = current_text
             current_text = TextPreprocessor.normalize_chapter_markers(current_text)
             current_text = log_transformation("Normalize Chapter Markers", before, current_text)
 
-            # Step 8: Remove URLs and emails
-            self.log_message("🔹 Step 8: Removing URLs and emails", 'batch')
+            # Step 11: Remove URLs and emails
+            self.log_message("🔹 Step 11: Removing URLs and emails", 'batch')
             before = current_text
             current_text = TextPreprocessor.remove_urls_emails(current_text)
             current_text = log_transformation("Remove URLs/Emails", before, current_text)
 
-            # Step 9: Remove page numbers
-            self.log_message("🔹 Step 9: Removing page numbers", 'batch')
+            # Step 12: Remove page numbers
+            self.log_message("🔹 Step 12: Removing page numbers", 'batch')
             before = current_text
             current_text = TextPreprocessor.remove_page_numbers(current_text)
             current_text = log_transformation("Remove Page Numbers", before, current_text)
 
-            # Step 10: Fix hyphenated line breaks
-            self.log_message("🔹 Step 10: Merging hyphenated line breaks", 'batch')
-            before = current_text
-            current_text = TextPreprocessor.fix_hyphenated_breaks(current_text)
-            current_text = log_transformation("Fix Hyphenated Breaks", before, current_text)
-
-            # Step 11: Normalize whitespace
-            self.log_message("🔹 Step 11: Normalizing whitespace", 'batch')
+            # Step 13: Normalize whitespace
+            self.log_message("🔹 Step 13: Normalizing whitespace", 'batch')
             before = current_text
             current_text = TextPreprocessor.normalize_whitespace(current_text)
             current_text = log_transformation("Normalize Whitespace", before, current_text)
 
-            # Step 12: Chunk for TTS using spaCy + Deepgram approach
-            self.log_message("🔹 Step 12: Chunking for TTS (spaCy + Deepgram hybrid)", 'batch')
+            # Step 14: Chunk for TTS using spaCy + Deepgram approach
+            self.log_message("🔹 Step 14: Chunking for TTS (spaCy + Deepgram hybrid)", 'batch')
             self.log_message("   Using linguistic sentence boundaries (250 char max)", 'info')
             before = current_text
             current_text = TextPreprocessor.chunk_for_tts(current_text, max_chars=250)
