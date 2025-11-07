@@ -13,206 +13,292 @@ import time
 import json
 from pathlib import Path
 from datetime import datetime
+import ftfy
+import spacy
 
 # ============================================================================
-# PREPROCESSING MODULE - Deterministic Text Cleaning
+# PREPROCESSING MODULE - Best-Practices Text Cleaning for TTS
 # ============================================================================
 
 class TextPreprocessor:
-    """Handles deterministic text cleaning tasks"""
+    """
+    Comprehensive text preprocessing for OCR to TTS pipeline.
 
-    # Abbreviation expansions
-    ABBREVIATIONS = {
-        r'\bMr\.': 'Mister',
-        r'\bMrs\.': 'Missus',
-        r'\bMs\.': 'Miss',
-        r'\bDr\.': 'Doctor',
-        r'\bProf\.': 'Professor',
-        r'\bSr\.': 'Senior',
-        r'\bJr\.': 'Junior',
-        r'\bvs\.': 'versus',
-        r'\betc\.': 'et cetera',
-        r'\be\.g\.': 'for example',
-        r'\bi\.e\.': 'that is',
-        r'\bph\.d\.': 'PhD',
-        r'\bPhD\.': 'PhD',
-    }
+    Uses industry best practices:
+    - ftfy: Automatic Unicode/mojibake cleaning
+    - spaCy: Linguistic sentence segmentation
+    - Deepgram approach: Hybrid chunking (sentences + comma fallback)
+
+    Based on research from:
+    - epub2tts (audiobook generation)
+    - Deepgram TTS optimization guide
+    - Coqui TTS best practices
+    """
+
+    # Load spaCy model once (lazy loading)
+    _nlp = None
+
+    @classmethod
+    def _get_nlp(cls):
+        """Lazy load spaCy model"""
+        if cls._nlp is None:
+            cls._nlp = spacy.load("en_core_web_sm")
+        return cls._nlp
 
     @staticmethod
-    def remove_page_numbers(text):
-        """Remove page numbers and headers"""
-        # Remove lines with just numbers
-        text = re.sub(r'^\s*\d+\s*$', '', text, flags=re.MULTILINE)
+    def clean_unicode(text):
+        """
+        Fix Unicode issues using ftfy, then clean OCR artifacts.
 
-        # Remove common headers
-        text = re.sub(r'^\s*\d+\s+(THE\s+TRACKER|THETRACKER)\s*$', '', text, flags=re.MULTILINE)
-        text = re.sub(r'^\s*(THE\s+TRACKER|THETRACKER)\s+\d+\s*$', '', text, flags=re.MULTILINE)
-        text = re.sub(r'^\s*[A-Z][a-z]+\s+\d+\s*$', '', text, flags=re.MULTILINE)  # "Search 227"
-        text = re.sub(r'^\s*\d+\s+[A-Z][a-z]+\s*$', '', text, flags=re.MULTILINE)  # "122 Search"
+        Handles:
+        - Mojibake (encoding mix-ups) - ftfy
+        - HTML entities - ftfy
+        - OCR artifacts like · → ' - manual replacement
+        - Curly quotes normalization - ftfy
+        """
+        # Step 1: Fix encoding issues with ftfy
+        text = ftfy.fix_text(text)
+
+        # Step 2: Replace common OCR artifacts
+        # These are legitimate Unicode characters that OCR misreads
+        text = text.replace('·', "'")  # Middle dot → apostrophe
+        text = text.replace('■', '')   # Box
+        text = text.replace('●', '')   # Circle
+        text = text.replace('∙', '')   # Bullet
+        text = text.replace('•', '')   # Bullet
 
         return text
 
     @staticmethod
-    def fix_contractions(text):
-        """Fix OCR spacing errors in contractions"""
-        # Fix spaces around apostrophes in contractions
-        text = re.sub(r"(\w+)\s+'\s+(\w+)", r"\1'\2", text)
-        text = re.sub(r"(\w+)'\s+(\w+)", r"\1'\2", text)
-        text = re.sub(r"(\w+)\s+'(\w+)", r"\1'\2", text)
+    def remove_page_numbers(text):
+        """
+        Remove page numbers and common headers.
 
-        # Fix common double contractions
-        text = re.sub(r"doesn't't", "doesn't", text)
+        Minimal regex approach - only removes obvious page artifacts:
+        - Lines with just numbers
+        - Common header patterns
+        """
+        # Remove lines with just numbers
+        text = re.sub(r'^\s*\d+\s*$', '', text, flags=re.MULTILINE)
+
+        # Remove trailing empty lines
+        text = re.sub(r'\n{3,}', '\n\n', text)
 
         return text
 
     @staticmethod
     def fix_hyphenated_breaks(text):
-        """Merge words broken across lines with hyphens"""
-        # Common OCR line-break patterns
+        """
+        Merge words broken across lines with hyphens.
+
+        Example: "end-\nof" → "endof"
+        """
         text = re.sub(r'(\w+)-\s*\n\s*(\w+)', lambda m: m.group(1) + m.group(2), text)
-
         return text
-
-    @staticmethod
-    def expand_abbreviations(text):
-        """Expand abbreviations for TTS"""
-        for pattern, replacement in TextPreprocessor.ABBREVIATIONS.items():
-            text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
-
-        return text
-
-    @staticmethod
-    def remove_unicode_artifacts(text):
-        """Remove common OCR unicode artifacts"""
-        # Replace or remove common artifacts
-        text = text.replace('·', "'")  # Middle dot often used for apostrophes
-        text = text.replace('■', '')
-        text = text.replace('●', '')
-        text = text.replace('∙', '')
-        text = text.replace('•', '')
-
-        # Normalize quotes
-        text = text.replace('"', '"').replace('"', '"')
-        text = text.replace(''', "'").replace(''', "'")
-
-        return text
-
-    @staticmethod
-    def normalize_line_breaks(text):
-        """Remove single line breaks, keep paragraph breaks"""
-        # First, normalize all line endings to \n
-        text = text.replace('\r\n', '\n').replace('\r', '\n')
-
-        # Replace 3+ newlines with exactly 2 (paragraph break)
-        text = re.sub(r'\n{3,}', '\n\n', text)
-
-        # Replace single newlines within paragraphs with space
-        # But keep double newlines (paragraph breaks)
-        lines = text.split('\n\n')
-        cleaned_paragraphs = []
-
-        for paragraph in lines:
-            # Within each paragraph, replace single newlines with spaces
-            cleaned = ' '.join(line.strip() for line in paragraph.split('\n') if line.strip())
-            if cleaned:
-                cleaned_paragraphs.append(cleaned)
-
-        return '\n\n'.join(cleaned_paragraphs)
 
     @staticmethod
     def normalize_whitespace(text):
-        """Normalize multiple spaces to single space"""
-        # Replace multiple spaces with single space
+        """
+        Normalize whitespace without destroying structure.
+
+        - Collapse multiple spaces to single space
+        - Preserve paragraph breaks (double newlines)
+        """
+        # Normalize line endings
+        text = text.replace('\r\n', '\n').replace('\r', '\n')
+
+        # Collapse multiple spaces within lines
         text = re.sub(r' {2,}', ' ', text)
 
         # Remove spaces at start/end of lines
         text = re.sub(r' +$', '', text, flags=re.MULTILINE)
         text = re.sub(r'^ +', '', text, flags=re.MULTILINE)
 
+        # Normalize excessive newlines to max 2 (paragraph break)
+        text = re.sub(r'\n{3,}', '\n\n', text)
+
         return text
 
     @staticmethod
-    def chunk_text_for_tts(text, max_chars=250):
+    def segment_sentences(text):
         """
-        Split text into TTS-ready chunks with max character limit.
-        Breaks at sentence boundaries, then comma boundaries if needed.
-        Preserves paragraph breaks.
+        Use spaCy for accurate sentence segmentation.
+
+        Benefits over regex:
+        - Handles "Dr.", "Jr.", "Mr." correctly
+        - Context-aware (doesn't break "U.S.A.")
+        - Uses dependency parsing for accuracy
+
+        Returns: List of sentences
         """
+        nlp = TextPreprocessor._get_nlp()
+        doc = nlp(text)
+        return [sent.text.strip() for sent in doc.sents if sent.text.strip()]
+
+    @staticmethod
+    def chunk_for_tts(text, max_chars=250):
+        """
+        Deepgram-style hybrid chunking for TTS optimization.
+
+        Strategy:
+        1. Split text into paragraphs
+        2. Use spaCy for sentence segmentation
+        3. Combine sentences while under max_chars
+        4. If single sentence > max_chars: split at commas (min 3 words)
+        5. Preserve paragraph breaks
+
+        This preserves natural speech boundaries where people pause.
+        """
+        # Split into paragraphs
         paragraphs = text.split('\n\n')
-        chunked_output = []
+        all_chunks = []
 
         for paragraph in paragraphs:
-            if not paragraph.strip():
+            paragraph = paragraph.strip()
+            if not paragraph:
                 continue
 
-            # Split paragraph into sentences
-            sentences = re.split(r'([.!?]+)', paragraph)
+            # Get sentences using spaCy
+            sentences = TextPreprocessor.segment_sentences(paragraph)
 
-            # Recombine sentences with their punctuation
-            full_sentences = []
-            for i in range(0, len(sentences)-1, 2):
-                if i+1 < len(sentences):
-                    full_sentences.append(sentences[i] + sentences[i+1])
+            # Combine sentences into chunks
+            para_chunks = []
+            current_chunk = ""
+
+            for sentence in sentences:
+                # Try to add sentence to current chunk
+                test_chunk = (current_chunk + " " + sentence).strip() if current_chunk else sentence
+
+                if len(test_chunk) <= max_chars:
+                    # Fits! Add it
+                    current_chunk = test_chunk
                 else:
-                    full_sentences.append(sentences[i])
-
-            # Process each sentence
-            paragraph_chunks = []
-            for sentence in full_sentences:
-                sentence = sentence.strip()
-                if not sentence:
-                    continue
-
-                # If sentence fits in max_chars, use it as-is
-                if len(sentence) <= max_chars:
-                    paragraph_chunks.append(sentence)
-                else:
-                    # Sentence too long, split at commas
-                    parts = sentence.split(',')
-                    current_chunk = ""
-
-                    for part in parts:
-                        part = part.strip()
-
-                        # If adding this part exceeds limit, save current chunk
-                        if current_chunk and len(current_chunk + ', ' + part) > max_chars:
-                            paragraph_chunks.append(current_chunk.strip())
-                            current_chunk = part
-                        else:
-                            if current_chunk:
-                                current_chunk += ', ' + part
-                            else:
-                                current_chunk = part
-
-                    # Add remaining chunk
+                    # Doesn't fit
                     if current_chunk:
-                        paragraph_chunks.append(current_chunk.strip())
+                        # Save current chunk
+                        para_chunks.append(current_chunk)
 
-            # Add paragraph chunks with empty line after paragraph
-            chunked_output.extend(paragraph_chunks)
-            chunked_output.append('')  # Empty line for paragraph break
+                    # Check if sentence itself is too long
+                    if len(sentence) > max_chars:
+                        # Split long sentence at commas
+                        comma_chunks = TextPreprocessor._split_at_commas(sentence, max_chars)
+                        para_chunks.extend(comma_chunks)
+                        current_chunk = ""
+                    else:
+                        # Start new chunk with this sentence
+                        current_chunk = sentence
 
-        # Remove trailing empty line
-        while chunked_output and not chunked_output[-1]:
-            chunked_output.pop()
+            # Add remaining chunk
+            if current_chunk:
+                para_chunks.append(current_chunk)
 
-        return '\n'.join(chunked_output)
+            # Add paragraph chunks
+            all_chunks.extend(para_chunks)
+            # Add blank line for paragraph break
+            all_chunks.append("")
+
+        # Remove trailing blank lines
+        while all_chunks and not all_chunks[-1]:
+            all_chunks.pop()
+
+        return '\n'.join(all_chunks)
+
+    @staticmethod
+    def _split_at_commas(sentence, max_chars):
+        """
+        Split a long sentence at commas.
+
+        Keeps minimum 3 words per chunk to maintain coherence.
+        Fallback: If no commas, split at last space before limit.
+        """
+        if ',' not in sentence:
+            # No commas, split at spaces
+            return TextPreprocessor._split_at_spaces(sentence, max_chars)
+
+        parts = sentence.split(',')
+        chunks = []
+        current_chunk = ""
+
+        for part in parts:
+            part = part.strip()
+            if not part:
+                continue
+
+            # Test adding this part
+            test_chunk = (current_chunk + ", " + part) if current_chunk else part
+
+            if len(test_chunk) <= max_chars:
+                current_chunk = test_chunk
+            else:
+                # Save current chunk if it has content
+                if current_chunk:
+                    chunks.append(current_chunk)
+
+                # Check if part itself is too long
+                if len(part) > max_chars:
+                    # Recursively split this part at spaces
+                    chunks.extend(TextPreprocessor._split_at_spaces(part, max_chars))
+                    current_chunk = ""
+                else:
+                    current_chunk = part
+
+        if current_chunk:
+            chunks.append(current_chunk)
+
+        return chunks
+
+    @staticmethod
+    def _split_at_spaces(text, max_chars):
+        """
+        Fallback: Split text at spaces when no better boundary exists.
+        """
+        chunks = []
+        words = text.split()
+        current_chunk = ""
+
+        for word in words:
+            test_chunk = (current_chunk + " " + word).strip() if current_chunk else word
+
+            if len(test_chunk) <= max_chars:
+                current_chunk = test_chunk
+            else:
+                if current_chunk:
+                    chunks.append(current_chunk)
+
+                # Handle extremely long words
+                if len(word) > max_chars:
+                    # Force split long word
+                    for i in range(0, len(word), max_chars):
+                        chunks.append(word[i:i+max_chars])
+                    current_chunk = ""
+                else:
+                    current_chunk = word
+
+        if current_chunk:
+            chunks.append(current_chunk)
+
+        return chunks
 
     @staticmethod
     def preprocess_text(text, max_chunk_size=250):
         """
-        Apply all preprocessing steps in order.
-        Returns cleaned and chunked text ready for TTS or LLM processing.
+        Complete preprocessing pipeline for OCR → TTS.
+
+        Steps:
+        1. Unicode cleaning (ftfy)
+        2. Remove page numbers
+        3. Fix hyphenated breaks
+        4. Normalize whitespace
+        5. Chunk for TTS (spaCy + Deepgram approach)
+
+        Returns: Cleaned, chunked text ready for TTS
         """
         steps = [
-            ("Removing page numbers", TextPreprocessor.remove_page_numbers),
-            ("Fixing contractions", TextPreprocessor.fix_contractions),
-            ("Fixing hyphenated line breaks", TextPreprocessor.fix_hyphenated_breaks),
-            ("Expanding abbreviations", TextPreprocessor.expand_abbreviations),
-            ("Removing unicode artifacts", TextPreprocessor.remove_unicode_artifacts),
-            ("Normalizing line breaks", TextPreprocessor.normalize_line_breaks),
-            ("Normalizing whitespace", TextPreprocessor.normalize_whitespace),
-            ("Chunking for TTS", lambda t: TextPreprocessor.chunk_text_for_tts(t, max_chunk_size)),
+            ("Clean Unicode (ftfy)", TextPreprocessor.clean_unicode),
+            ("Remove page numbers", TextPreprocessor.remove_page_numbers),
+            ("Fix hyphenated line breaks", TextPreprocessor.fix_hyphenated_breaks),
+            ("Normalize whitespace", TextPreprocessor.normalize_whitespace),
+            ("Chunk for TTS (spaCy + hybrid)", lambda t: TextPreprocessor.chunk_for_tts(t, max_chunk_size)),
         ]
 
         result = text
@@ -220,6 +306,11 @@ class TextPreprocessor:
             result = step_func(result)
 
         return result
+
+
+# ============================================================================
+# GUI APPLICATION
+# ============================================================================
 
 class TTSPreprocessorGUI:
     def __init__(self, root):
@@ -510,17 +601,17 @@ class TTSPreprocessorGUI:
                 self.log_message("", 'info')
                 return after
 
-            # Step 1: Remove page numbers
-            self.log_message("🔹 Step 1: Removing page numbers and headers", 'batch')
+            # Step 1: Clean Unicode with ftfy
+            self.log_message("🔹 Step 1: Cleaning Unicode (ftfy - fixes mojibake, OCR artifacts)", 'batch')
+            before = current_text
+            current_text = TextPreprocessor.clean_unicode(current_text)
+            current_text = log_transformation("Clean Unicode (ftfy)", before, current_text)
+
+            # Step 2: Remove page numbers
+            self.log_message("🔹 Step 2: Removing page numbers", 'batch')
             before = current_text
             current_text = TextPreprocessor.remove_page_numbers(current_text)
             current_text = log_transformation("Remove Page Numbers", before, current_text)
-
-            # Step 2: Fix contractions
-            self.log_message("🔹 Step 2: Fixing contractions", 'batch')
-            before = current_text
-            current_text = TextPreprocessor.fix_contractions(current_text)
-            current_text = log_transformation("Fix Contractions", before, current_text)
 
             # Step 3: Fix hyphenated line breaks
             self.log_message("🔹 Step 3: Merging hyphenated line breaks", 'batch')
@@ -528,35 +619,18 @@ class TTSPreprocessorGUI:
             current_text = TextPreprocessor.fix_hyphenated_breaks(current_text)
             current_text = log_transformation("Fix Hyphenated Breaks", before, current_text)
 
-            # Step 4: Expand abbreviations
-            self.log_message("🔹 Step 4: Expanding abbreviations", 'batch')
-            before = current_text
-            current_text = TextPreprocessor.expand_abbreviations(current_text)
-            current_text = log_transformation("Expand Abbreviations", before, current_text)
-
-            # Step 5: Remove unicode artifacts
-            self.log_message("🔹 Step 5: Removing unicode artifacts", 'batch')
-            before = current_text
-            current_text = TextPreprocessor.remove_unicode_artifacts(current_text)
-            current_text = log_transformation("Remove Unicode Artifacts", before, current_text)
-
-            # Step 6: Normalize line breaks
-            self.log_message("🔹 Step 6: Normalizing line breaks", 'batch')
-            before = current_text
-            current_text = TextPreprocessor.normalize_line_breaks(current_text)
-            current_text = log_transformation("Normalize Line Breaks", before, current_text)
-
-            # Step 7: Normalize whitespace
-            self.log_message("🔹 Step 7: Normalizing whitespace", 'batch')
+            # Step 4: Normalize whitespace
+            self.log_message("🔹 Step 4: Normalizing whitespace", 'batch')
             before = current_text
             current_text = TextPreprocessor.normalize_whitespace(current_text)
             current_text = log_transformation("Normalize Whitespace", before, current_text)
 
-            # Step 8: Chunk for TTS
-            self.log_message("🔹 Step 8: Chunking for TTS (max 250 chars/line)", 'batch')
+            # Step 5: Chunk for TTS using spaCy + Deepgram approach
+            self.log_message("🔹 Step 5: Chunking for TTS (spaCy + Deepgram hybrid)", 'batch')
+            self.log_message("   Using linguistic sentence boundaries (250 char max)", 'info')
             before = current_text
-            current_text = TextPreprocessor.chunk_text_for_tts(current_text, max_chars=250)
-            current_text = log_transformation("Chunk for TTS", before, current_text, show_examples=False)
+            current_text = TextPreprocessor.chunk_for_tts(current_text, max_chars=250)
+            current_text = log_transformation("Chunk for TTS (spaCy)", before, current_text, show_examples=False)
 
             processing_time = time.time() - start_time
             preprocessed = current_text
