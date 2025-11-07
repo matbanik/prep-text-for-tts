@@ -29,7 +29,7 @@ class TTSPreprocessorGUI:
         self.temperature = tk.DoubleVar(value=0.2)
         self.seed = tk.IntVar(value=42)
         self.batch_size = tk.IntVar(value=500)
-        self.max_tokens = tk.IntVar(value=4000)
+        self.max_tokens = tk.IntVar(value=16000)
         
         # Processing state
         self.is_processing = False
@@ -100,7 +100,7 @@ class TTSPreprocessorGUI:
                     textvariable=self.batch_size, width=10).grid(row=0, column=5, padx=5)
         
         ttk.Label(params_frame, text="Max Tokens:").grid(row=0, column=6, sticky=tk.W, padx=5)
-        ttk.Spinbox(params_frame, from_=1000, to=8000, increment=500, 
+        ttk.Spinbox(params_frame, from_=1000, to=32000, increment=1000,
                     textvariable=self.max_tokens, width=10).grid(row=0, column=7, padx=5)
         
         # ==== MIDDLE SECTION: Progress & Controls ====
@@ -376,6 +376,10 @@ Progress:  0.0%"""
         """Extract last N sentences for context"""
         sentences = re.split(r'[.!?]+', text)
         sentences = [s.strip() for s in sentences if s.strip()]
+
+        # Filter out any LLM-generated batch completion messages
+        sentences = [s for s in sentences if not re.search(r'Batch\s+\d+.*complete', s, re.IGNORECASE)]
+
         last_sentences = sentences[-num_sentences:] if len(sentences) >= num_sentences else sentences
         return ' '.join(last_sentences) + '.' if last_sentences else ""
     
@@ -472,16 +476,19 @@ Remember: Only output the cleaned NEW text, not the context."""
                     actual_end = batch_end
                 
                 batch_text = ''.join(batch_lines)
-                
+                input_line_count = len(batch_lines)
+                input_char_count = len(batch_text)
+
                 # Update preview
                 self.input_preview.delete(1.0, tk.END)
                 self.input_preview.insert(1.0, batch_text[:2000] + "..." if len(batch_text) > 2000 else batch_text)
-                
+
                 # Log batch info
                 self.log_message(f"\n{'='*70}", 'batch')
                 self.log_message(f"📝 BATCH {batch_num}/{self.total_batches}", 'batch')
                 self.log_message(f"{'='*70}", 'batch')
-                self.log_message(f"   Lines: {i+1} to {actual_end} ({len(batch_text)} chars)", 'info')
+                self.log_message(f"   Lines: {i+1} to {actual_end}", 'info')
+                self.log_message(f"   Input:  {input_line_count} lines, {input_char_count} chars", 'info')
                 
                 if self.previous_context:
                     self.log_message(f"   Using context from Batch {batch_num-1}", 'info')
@@ -497,27 +504,45 @@ Remember: Only output the cleaned NEW text, not the context."""
                 )
                 
                 batch_time = time.time() - batch_start_time
-                
+
                 if cleaned:
+                    # Calculate output stats
+                    output_line_count = len(cleaned.splitlines())
+                    output_char_count = len(cleaned)
+
+                    # Calculate reductions
+                    char_reduction = ((input_char_count - output_char_count) / input_char_count * 100) if input_char_count > 0 else 0
+                    line_reduction = ((input_line_count - output_line_count) / input_line_count * 100) if input_line_count > 0 else 0
+
                     # Update output preview
                     self.output_preview.delete(1.0, tk.END)
                     self.output_preview.insert(1.0, cleaned[:2000] + "..." if len(cleaned) > 2000 else cleaned)
-                    
+
                     # Append to output file
                     with open(self.output_file.get(), 'a', encoding='utf-8') as f:
                         f.write(cleaned)
                         if not cleaned.endswith('\n\n'):
                             f.write('\n\n')
-                    
+
                     # Update full output view
                     self.full_output_text.insert(tk.END, cleaned + '\n\n')
                     self.full_output_text.see(tk.END)
-                    
+
                     # Save context
                     self.previous_context = next_context
-                    
-                    self.log_message(f"   ✓ Batch complete in {batch_time:.1f}s ({len(cleaned)} chars)", 'success')
-                    self.log_message(f"   Context saved: '{next_context[:60]}...'", 'info')
+
+                    # Log results with comparison
+                    self.log_message(f"   ✓ Batch complete in {batch_time:.1f}s", 'success')
+                    self.log_message(f"   Output: {output_line_count} lines, {output_char_count} chars", 'success')
+                    self.log_message(f"   Change: {char_reduction:+.1f}% chars, {line_reduction:+.1f}% lines", 'info')
+
+                    # Warn if excessive data loss
+                    if char_reduction > 15:
+                        self.log_message(f"   ⚠ WARNING: Output reduced by {char_reduction:.1f}% - check for truncation!", 'warning')
+
+                    # Show context (filtered)
+                    if next_context:
+                        self.log_message(f"   Context: '{next_context[:60]}...'", 'info')
                 else:
                     self.log_message(f"   ✗ Batch FAILED - stopping", 'error')
                     break

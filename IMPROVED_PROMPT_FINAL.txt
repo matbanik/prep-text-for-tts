@@ -12,25 +12,23 @@ PROCESSING APPROACH:
 - NEVER split in the middle of paragraphs or sentences
 - Use natural breakpoints: section breaks, chapter endings, or clear topic transitions
 - Include 2-3 sentence overlap between chunks to maintain context continuity
-- After completing each batch, explicitly ask: "Batch [X] complete (lines 1-X). Ready for next batch?"
+- OUTPUT ONLY THE CLEANED TEXT - NO status messages, NO batch completion notifications, NO meta-commentary
 
 BATCH TRANSITION INSTRUCTIONS:
 
 For Batch 1:
 1. Read lines 1 through approximately 500 (or to next natural paragraph break)
 2. Apply all transformations
-3. Output cleaned text to OUTPUT.txt
-4. Note the last 2-3 sentences for context
-5. Ask user: "Batch 1 complete (lines 1-X). Ready for next batch?"
+3. Output ONLY the cleaned text - nothing else
+4. Note the last 2-3 sentences internally for context
 
 For Batch 2 and Beyond:
 1. FIRST: Repeat the last 2-3 sentences from the previous batch (for your context only - do NOT output them again)
 2. Continue reading from where the previous batch ended
 3. Process next ~500 lines to natural breakpoint
 4. Apply all transformations
-5. Append ONLY the new content to OUTPUT.txt (do not duplicate the overlap)
-6. Note the last 2-3 sentences for next batch's context
-7. Ask user: "Batch [X] complete (lines Y-Z). Ready for next batch?"
+5. Output ONLY the new cleaned content (do not duplicate the overlap, do not add status messages)
+6. Note the last 2-3 sentences internally for next batch's context
 
 SEAMLESS TRANSITION EXAMPLE:
 
@@ -171,18 +169,16 @@ Initial Setup (Batch 1):
 1. Open and read INPUT.txt
 2. Identify first natural breakpoint at ~500 lines (paragraph or section end)
 3. Process first batch with all transformations using your language understanding
-4. Write cleaned text directly to OUTPUT.txt
+4. Output ONLY the cleaned text - no status messages, no commentary
 5. Remember the last 2-3 sentences internally for next batch context
-6. Inform user: "Batch 1 complete (lines 1-X). Ready for next batch?"
 
 Subsequent Batches (2, 3, 4...):
 1. Recall last 2-3 sentences from previous batch (for your context only)
 2. Continue reading INPUT.txt from where previous batch ended
 3. Process next ~500 lines to natural breakpoint
 4. Apply all transformations using your language understanding
-5. Append ONLY new cleaned text to OUTPUT.txt (skip the overlap portion)
+5. Output ONLY new cleaned text (skip the overlap portion, no status messages)
 6. Remember the last 2-3 sentences internally for next batch context
-7. Inform user: "Batch Y complete (lines X-Z). Ready for next batch?"
 
 Context Preservation Strategy:
 - The overlap ensures you understand the narrative context at batch boundaries
@@ -193,9 +189,9 @@ Context Preservation Strategy:
 Final Verification:
 After all batches processed:
 1. Verify OUTPUT.txt has no formatting artifacts
-2. Confirm line count is appropriate (clean text may be shorter than OCR text)
+2. Confirm line count is appropriate (clean text should be 85-100% of OCR text size)
 3. Check that there are no duplicated sentences at batch boundaries
-4. Report: "Processing complete. Total lines processed: X. Output saved to OUTPUT.txt"
+4. Output should contain ONLY the cleaned text with NO status messages
 
 REMEMBER:
 - Use your direct text processing capabilities, not scripts
