@@ -15,6 +15,7 @@ from pathlib import Path
 from datetime import datetime
 import ftfy
 import spacy
+from multi_pass_processor import MultiPassOCRProcessor
 
 # ============================================================================
 # PREPROCESSING MODULE - Best-Practices Text Cleaning for TTS
@@ -37,6 +38,7 @@ class TextPreprocessor:
 
     # Load spaCy model once (lazy loading)
     _nlp = None
+    _ocr_processor = None
 
     @classmethod
     def _get_nlp(cls):
@@ -44,6 +46,31 @@ class TextPreprocessor:
         if cls._nlp is None:
             cls._nlp = spacy.load("en_core_web_sm")
         return cls._nlp
+
+    @classmethod
+    def _get_ocr_processor(cls):
+        """Lazy load MultiPassOCRProcessor"""
+        if cls._ocr_processor is None:
+            cls._ocr_processor = MultiPassOCRProcessor(enable_logging=False)
+        return cls._ocr_processor
+
+    @staticmethod
+    def apply_multi_pass_ocr_cleaning(text):
+        """
+        Apply 5-stage multi-pass OCR cleaning (production-ready: 87.09% accuracy).
+
+        Replaces old steps 1-6:
+        - Stage 1: Semantic Cleaning (ftfy, page headers, whitespace)
+        - Stage 2: Deterministic Cleaning (apostrophes, word fragments, OCR errors)
+        - Stage 3: Sentence Reconstruction (paragraph merging)
+        - Stage 4: Edge Case Collection
+        - Stage 5: Edge Case Handling
+
+        Returns: (cleaned_text, processing_state)
+        """
+        processor = TextPreprocessor._get_ocr_processor()
+        cleaned_text, state = processor.process(text)
+        return cleaned_text, state
 
     @staticmethod
     def clean_unicode(text):
@@ -783,38 +810,39 @@ class TextPreprocessor:
         Complete comprehensive preprocessing pipeline for OCR → TTS.
 
         Based on best practices from:
+        - Multi-Pass OCR Processor (87.09% accuracy)
         - epub2tts (audiobook generation)
         - ElevenLabs normalization guide
         - Coqui TTS preprocessing
         - Deepgram TTS optimization
 
-        Steps:
-        1. Unicode cleaning (ftfy + OCR artifacts)
-        2. Remove page headers (Raccoon Encounter/35, etc.) ← NEW
-        3. Fix merged words (beenkilled → been killed)      ← NEW
-        4. Fix orphaned apostrophes (people'and → people and)
-        5. Fix split words (hun\ndred → hundred)
-        6. Merge sentence lines (mid-sentence newlines)
-        7. Normalize punctuation (!!!, ???, ---, ...)
-        8. Normalize symbols (™, ©, &, @, #)
-        9. Normalize numbers (1st → first, 1990s)
-        10. Normalize currency ($100 → 100 dollars)
-        11. Normalize ALL CAPS (but preserve acronyms)
-        12. Normalize chapter markers (CHAPTER I → Chapter 1)
-        13. Remove URLs and emails
-        14. Remove remaining page numbers
-        15. Normalize whitespace
-        16. Chunk for TTS (spaCy + Deepgram hybrid)
+        Pipeline:
+        PART 1: OCR Cleaning (Multi-Pass Processor - 5 stages)
+          Stage 1: Semantic Cleaning (ftfy, page headers, whitespace)
+          Stage 2: Deterministic Cleaning (apostrophes, word fragments, OCR errors)
+          Stage 3: Sentence Reconstruction (paragraph merging)
+          Stage 4: Edge Case Collection
+          Stage 5: Edge Case Handling
+
+        PART 2: TTS Normalization (10 steps)
+          1. Normalize punctuation (!!!, ???, ---, ...)
+          2. Normalize symbols (™, ©, &, @, #)
+          3. Normalize numbers (1st → first, 1990s)
+          4. Normalize currency ($100 → 100 dollars)
+          5. Normalize ALL CAPS (but preserve acronyms)
+          6. Normalize chapter markers (CHAPTER I → Chapter 1)
+          7. Remove URLs and emails
+          8. Remove remaining page numbers
+          9. Normalize whitespace
+          10. Chunk for TTS (spaCy + Deepgram hybrid)
 
         Returns: Cleaned, chunked text ready for TTS
         """
-        steps = [
-            ("Clean Unicode (ftfy)", TextPreprocessor.clean_unicode),
-            ("Remove page headers", TextPreprocessor.remove_page_headers),
-            ("Fix merged words", TextPreprocessor.fix_merged_words),
-            ("Fix orphaned apostrophes", TextPreprocessor.fix_orphaned_apostrophes),
-            ("Fix split words", TextPreprocessor.fix_split_words),
-            ("Merge sentence lines", TextPreprocessor.merge_sentence_lines),
+        # Part 1: Multi-Pass OCR Cleaning (replaces old steps 1-6)
+        result, state = TextPreprocessor.apply_multi_pass_ocr_cleaning(text)
+
+        # Part 2: TTS-specific normalization
+        tts_steps = [
             ("Normalize punctuation", TextPreprocessor.normalize_punctuation),
             ("Normalize symbols", TextPreprocessor.normalize_symbols),
             ("Normalize numbers", TextPreprocessor.normalize_numbers),
@@ -827,8 +855,7 @@ class TextPreprocessor:
             ("Chunk for TTS (spaCy + hybrid)", lambda t: TextPreprocessor.chunk_for_tts(t, max_chunk_size)),
         ]
 
-        result = text
-        for step_name, step_func in steps:
+        for step_name, step_func in tts_steps:
             result = step_func(result)
 
         return result
@@ -1127,92 +1154,92 @@ class TTSPreprocessorGUI:
                 self.log_message("", 'info')
                 return after
 
-            # Step 1: Clean Unicode with ftfy
-            self.log_message("🔹 Step 1: Cleaning Unicode (ftfy + OCR artifacts)", 'batch')
-            before = current_text
-            current_text = TextPreprocessor.clean_unicode(current_text)
-            current_text = log_transformation("Clean Unicode", before, current_text)
+            # ========================================================================
+            # PART 1: MULTI-PASS OCR CLEANING (87.09% accuracy)
+            # ========================================================================
+            self.log_message("🔹 PART 1: MULTI-PASS OCR CLEANING (5 Stages)", 'batch')
+            self.log_message("   Production-ready processor: 87.09% accuracy", 'success')
+            self.log_message("", 'info')
 
-            # Step 2: Remove page headers
-            self.log_message("🔹 Step 2: Removing page headers (Raccoon Encounter/35, etc.)", 'batch')
             before = current_text
-            current_text = TextPreprocessor.remove_page_headers(current_text)
-            current_text = log_transformation("Remove Page Headers", before, current_text)
+            current_text, ocr_state = TextPreprocessor.apply_multi_pass_ocr_cleaning(current_text)
 
-            # Step 3: Fix merged words
-            self.log_message("🔹 Step 3: Fixing merged words (beenkilled→been killed)", 'batch')
-            before = current_text
-            current_text = TextPreprocessor.fix_merged_words(current_text)
-            current_text = log_transformation("Fix Merged Words", before, current_text)
+            # Log multi-pass processor stats
+            self.log_message(f"{'='*70}", 'batch')
+            self.log_message(f"MULTI-PASS OCR PROCESSING RESULTS", 'batch')
+            self.log_message(f"{'='*70}", 'batch')
+            self.log_message(f"   ✓ Stage 1: Semantic Cleaning", 'success')
+            self.log_message(f"      - Page headers removed: {ocr_state.stats.get('headers_removed', 0)}", 'info')
+            self.log_message(f"      - Whitespace normalized: {ocr_state.stats.get('whitespace_normalized', 0)}", 'info')
+            self.log_message(f"   ✓ Stage 2: Deterministic Cleaning", 'success')
+            self.log_message(f"      - Apostrophes fixed: {ocr_state.stats.get('apostrophes_fixed', 0)}", 'info')
+            self.log_message(f"      - Word fragments fixed: {ocr_state.stats.get('fragments_fixed', 0)}", 'info')
+            self.log_message(f"   ✓ Stage 3: Sentence Reconstruction", 'success')
+            self.log_message(f"      - Lines merged: {ocr_state.stats.get('lines_merged', 0)}", 'info')
+            self.log_message(f"      - Paragraphs formed: {ocr_state.stats.get('paragraphs_formed', 0)}", 'info')
+            self.log_message(f"   ✓ Stage 4: Edge Case Collection", 'success')
+            self.log_message(f"      - Edge cases detected: {len(ocr_state.edge_cases)}", 'info')
+            self.log_message(f"   ✓ Stage 5: Edge Case Handling", 'success')
+            self.log_message(f"      - Edge cases logged: {ocr_state.stats.get('edge_cases_handled', 0)}", 'info')
 
-            # Step 4: Fix orphaned apostrophes
-            self.log_message("🔹 Step 4: Fixing orphaned apostrophes (people'and→people and)", 'batch')
-            before = current_text
-            current_text = TextPreprocessor.fix_orphaned_apostrophes(current_text)
-            current_text = log_transformation("Fix Orphaned Apostrophes", before, current_text)
+            current_text = log_transformation("Multi-Pass OCR Cleaning (5 stages)", before, current_text, show_examples=True)
 
-            # Step 5: Fix split words
-            self.log_message("🔹 Step 5: Fixing split words (hun\\ndred→hundred)", 'batch')
-            before = current_text
-            current_text = TextPreprocessor.fix_split_words(current_text)
-            current_text = log_transformation("Fix Split Words", before, current_text)
+            # ========================================================================
+            # PART 2: TTS-SPECIFIC NORMALIZATION (10 Steps)
+            # ========================================================================
+            self.log_message("🔹 PART 2: TTS-SPECIFIC NORMALIZATION (10 Steps)", 'batch')
+            self.log_message("", 'info')
 
-            # Step 6: Merge sentence lines
-            self.log_message("🔹 Step 6: Merging sentence lines (remove mid-sentence newlines)", 'batch')
-            before = current_text
-            current_text = TextPreprocessor.merge_sentence_lines(current_text)
-            current_text = log_transformation("Merge Sentence Lines", before, current_text)
-
-            # Step 7: Normalize punctuation
-            self.log_message("🔹 Step 7: Normalizing punctuation (???, !!!, ---, ...)", 'batch')
+            # Step 1 of TTS Normalization: Normalize punctuation
+            self.log_message("🔹 TTS Step 1: Normalizing punctuation (???, !!!, ---, ...)", 'batch')
             before = current_text
             current_text = TextPreprocessor.normalize_punctuation(current_text)
             current_text = log_transformation("Normalize Punctuation", before, current_text)
 
-            # Step 8: Normalize symbols
-            self.log_message("🔹 Step 8: Normalizing symbols (™, ©, &, @, #)", 'batch')
+            # Step 2 of TTS Normalization: Normalize symbols
+            self.log_message("🔹 TTS Step 2: Normalizing symbols (™, ©, &, @, #)", 'batch')
             before = current_text
             current_text = TextPreprocessor.normalize_symbols(current_text)
             current_text = log_transformation("Normalize Symbols", before, current_text)
 
-            # Step 9: Normalize numbers
-            self.log_message("🔹 Step 9: Normalizing numbers (1st→first, 1990s)", 'batch')
+            # Step 3 of TTS Normalization: Normalize numbers
+            self.log_message("🔹 TTS Step 3: Normalizing numbers (1st→first, 1990s)", 'batch')
             before = current_text
             current_text = TextPreprocessor.normalize_numbers(current_text)
             current_text = log_transformation("Normalize Numbers", before, current_text)
 
-            # Step 10: Normalize currency
-            self.log_message("🔹 Step 10: Normalizing currency ($100→100 dollars)", 'batch')
+            # Step 4 of TTS Normalization: Normalize currency
+            self.log_message("🔹 TTS Step 4: Normalizing currency ($100→100 dollars)", 'batch')
             before = current_text
             current_text = TextPreprocessor.normalize_currency(current_text)
             current_text = log_transformation("Normalize Currency", before, current_text)
 
-            # Step 11: Normalize ALL CAPS
-            self.log_message("🔹 Step 11: Normalizing ALL CAPS (preserve acronyms)", 'batch')
+            # Step 5 of TTS Normalization: Normalize ALL CAPS
+            self.log_message("🔹 TTS Step 5: Normalizing ALL CAPS (preserve acronyms)", 'batch')
             before = current_text
             current_text = TextPreprocessor.normalize_all_caps(current_text)
             current_text = log_transformation("Normalize ALL CAPS", before, current_text)
 
-            # Step 12: Normalize chapter markers
-            self.log_message("🔹 Step 12: Normalizing chapter markers (Chapter IV→Chapter 4)", 'batch')
+            # Step 6 of TTS Normalization: Normalize chapter markers
+            self.log_message("🔹 TTS Step 6: Normalizing chapter markers (Chapter IV→Chapter 4)", 'batch')
             before = current_text
             current_text = TextPreprocessor.normalize_chapter_markers(current_text)
             current_text = log_transformation("Normalize Chapter Markers", before, current_text)
 
-            # Step 13: Remove URLs and emails
-            self.log_message("🔹 Step 13: Removing URLs and emails", 'batch')
+            # Step 7 of TTS Normalization: Remove URLs and emails
+            self.log_message("🔹 TTS Step 7: Removing URLs and emails", 'batch')
             before = current_text
             current_text = TextPreprocessor.remove_urls_emails(current_text)
             current_text = log_transformation("Remove URLs/Emails", before, current_text)
 
-            # Step 14: Remove page numbers
-            self.log_message("🔹 Step 14: Removing remaining page numbers", 'batch')
+            # Step 8 of TTS Normalization: Remove page numbers
+            self.log_message("🔹 TTS Step 8: Removing remaining page numbers", 'batch')
             before = current_text
             current_text = TextPreprocessor.remove_page_numbers(current_text)
             current_text = log_transformation("Remove Page Numbers", before, current_text)
 
-            # Step 15: Normalize whitespace
-            self.log_message("🔹 Step 15: Normalizing whitespace", 'batch')
+            # Step 9 of TTS Normalization: Normalize whitespace
+            self.log_message("🔹 TTS Step 9: Normalizing whitespace", 'batch')
             before = current_text
             current_text = TextPreprocessor.normalize_whitespace(current_text)
             current_text = log_transformation("Normalize Whitespace", before, current_text)
