@@ -7,8 +7,10 @@ from pathlib import Path
 import difflib
 
 def analyze_differences():
-    processed = Path("/home/user/prep-text-for-tts/PROCESSED_OUTPUT.txt").read_text()
-    expected = Path("/home/user/prep-text-for-tts/OUTPUT.txt").read_text()
+    # Get repo root
+    repo_root = Path(__file__).parent.parent
+    processed = (repo_root / "PROCESSED_OUTPUT.txt").read_text()
+    expected = (repo_root / "docs" / "OUTPUT.txt").read_text()
 
     processed_lines = processed.split('\n')
     expected_lines = expected.split('\n')

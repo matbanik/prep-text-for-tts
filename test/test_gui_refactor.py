@@ -3,6 +3,11 @@
 Test the refactored GUI integration with multi_pass_processor
 """
 
+import sys
+from pathlib import Path
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from multi_pass_processor import MultiPassOCRProcessor
 
 def test_multi_pass_integration():

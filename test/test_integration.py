@@ -4,14 +4,20 @@ Integration test for multi-pass processor.
 Compares PROCESSED_OUTPUT.txt against expected OUTPUT.txt.
 """
 
+import sys
 from pathlib import Path
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from test_multi_pass_processor import OCRTestFramework, run_test
 from multi_pass_processor import MultiPassOCRProcessor
 
 def test_multi_pass_processor():
     """Test the multi-pass processor against expected output."""
-    input_path = Path("/home/user/prep-text-for-tts/INPUT.txt")
-    expected_output_path = Path("/home/user/prep-text-for-tts/OUTPUT.txt")
+    # Get repo root
+    repo_root = Path(__file__).parent.parent
+    input_path = repo_root / "docs" / "INPUT.txt"
+    expected_output_path = repo_root / "docs" / "OUTPUT.txt"
 
     # Create processor function
     def processor_func(text: str) -> str:
