@@ -1045,6 +1045,10 @@ class TTSPreprocessorGUI:
         self.start_time = None
         self.previous_context = ""
 
+        # Batch continuity tracking
+        self.previous_input_last_sentence = ""
+        self.previous_output_last_sentence = ""
+
         # Queue for thread-safe GUI updates
         self.log_queue = queue.Queue()
 
@@ -1670,7 +1674,11 @@ Progress:  0.0%"""
         self.current_batch = 0
         self.start_time = time.time()
         self.previous_context = ""
-        
+
+        # Reset batch continuity tracking
+        self.previous_input_last_sentence = ""
+        self.previous_output_last_sentence = ""
+
         self.start_btn.config(state=tk.DISABLED)
         self.pause_btn.config(state=tk.NORMAL)
         self.stop_btn.config(state=tk.NORMAL)
@@ -1882,7 +1890,101 @@ Progress:  0.0%"""
         import difflib
         diff_ratio = difflib.SequenceMatcher(None, input_sent, output_sent).ratio()
         self.log_message(f"      📊 Similarity: {diff_ratio*100:.1f}%", 'info')
-    
+
+    def check_batch_continuity(self, current_input_text, current_output_text, batch_num):
+        """
+        Check continuity between consecutive batches.
+
+        Compares:
+        - Previous OUTPUT last sentence vs Current OUTPUT first sentence
+        - Previous INPUT last sentence vs Current INPUT first sentence
+
+        This detects gaps or overlaps at batch boundaries.
+        """
+        if batch_num <= 1:
+            # No previous batch to compare
+            return
+
+        current_input_first = self.extract_first_sentence(current_input_text)
+        current_output_first = self.extract_first_sentence(current_output_text)
+
+        # Log continuity check
+        self.log_message(f"   {'='*66}", 'info')
+        self.log_message(f"   🔗 BATCH CONTINUITY CHECK (Batch {batch_num-1} → {batch_num})", 'batch')
+        self.log_message(f"   {'='*66}", 'info')
+
+        # Check OUTPUT continuity
+        self.log_message(f"   📤 Generated Output Continuity:", 'info')
+        self.log_message(f"      BATCH {batch_num-1} OUTPUT last sentence:", 'info')
+        self.log_message(f"      '{self.previous_output_last_sentence}'", 'info')
+        self.log_message(f"      BATCH {batch_num} OUTPUT first sentence:", 'info')
+        self.log_message(f"      '{current_output_first}'", 'info')
+
+        # Check if output flows naturally
+        output_continuity = self._check_sentence_continuity(
+            self.previous_output_last_sentence,
+            current_output_first
+        )
+
+        if output_continuity:
+            self.log_message(f"      ✓ Output flows naturally between batches", 'success')
+        else:
+            self.log_message(f"      ⚠ Potential gap or overlap in output!", 'warning')
+
+        self.log_message(f"", 'info')
+
+        # Check INPUT continuity (for reference)
+        self.log_message(f"   📥 Original Input Continuity:", 'info')
+        self.log_message(f"      BATCH {batch_num-1} INPUT last sentence:", 'info')
+        self.log_message(f"      '{self.previous_input_last_sentence}'", 'info')
+        self.log_message(f"      BATCH {batch_num} INPUT first sentence:", 'info')
+        self.log_message(f"      '{current_input_first}'", 'info')
+
+        # Check if input was continuous
+        input_continuity = self._check_sentence_continuity(
+            self.previous_input_last_sentence,
+            current_input_first
+        )
+
+        if input_continuity:
+            self.log_message(f"      ✓ Input batches were continuous", 'success')
+        else:
+            self.log_message(f"      ⚠ Input batches had a gap (expected for paragraph breaks)", 'info')
+
+        self.log_message(f"   {'='*66}", 'info')
+
+    def _check_sentence_continuity(self, prev_sentence, next_sentence):
+        """
+        Check if two consecutive sentences flow naturally.
+
+        Returns True if sentences appear to be continuous (not overlapping or gapped).
+        """
+        if not prev_sentence or not next_sentence:
+            return False
+
+        # Normalize sentences
+        prev_normalized = prev_sentence.lower().strip()
+        next_normalized = next_sentence.lower().strip()
+
+        # Check for exact duplication (overlap issue)
+        if prev_normalized == next_normalized:
+            return False  # Same sentence repeated
+
+        # Check for significant word overlap (might indicate duplication)
+        prev_words = set(prev_normalized.split())
+        next_words = set(next_normalized.split())
+
+        if prev_words and next_words:
+            overlap = len(prev_words & next_words)
+            overlap_ratio = overlap / min(len(prev_words), len(next_words))
+
+            # If more than 80% overlap, might be duplicate content
+            if overlap_ratio > 0.8:
+                return False
+
+        # Otherwise assume continuity is good
+        return True
+
     def find_paragraph_break(self, lines, max_lookback=50):
         """Find natural paragraph break"""
         for i in range(len(lines)-1, max(len(lines)-max_lookback, 0), -1):
@@ -2050,6 +2152,12 @@ Remember: Only output the cleaned NEW text, not the context."""
                         self.log_message(f"   ⏹ Stopping processing to prevent data loss", 'error')
                         break
 
+                    # Check batch continuity (for batch 2+)
+                    if batch_num > 1:
+                        self.log_message(f"", 'info')
+                        self.check_batch_continuity(batch_text, cleaned, batch_num)
+                        self.log_message(f"", 'info')
+
                     # Check batch alignment (first/last sentence matching)
                     self.log_message(f"", 'info')
                     alignment_ok = self.check_batch_alignment(batch_text, cleaned, batch_num)
@@ -2059,6 +2167,10 @@ Remember: Only output the cleaned NEW text, not the context."""
                         self.log_message(f"   ⚠ ALIGNMENT WARNING: Input/Output boundaries don't match!", 'warning')
                         self.log_message(f"   ⚠ This may indicate content loss or hallucination", 'warning')
                         # Continue processing but warn user
+
+                    # Store last sentences for continuity check in next batch
+                    self.previous_input_last_sentence = self.extract_last_sentence(batch_text)
+                    self.previous_output_last_sentence = self.extract_last_sentence(cleaned)
 
                     # Update output preview
                     self.output_preview.delete(1.0, tk.END)
