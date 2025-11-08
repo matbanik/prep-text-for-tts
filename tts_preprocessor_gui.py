@@ -1,6 +1,13 @@
 """
 TTS Text Preprocessor GUI
-A professional interface for batch processing text with LM Studio
+A professional interface for batch processing text with Qwen API (Alibaba Cloud Model Studio)
+
+Features:
+- Encrypted API key storage using Fernet symmetric encryption
+- Multi-pass OCR cleaning (87.09% accuracy)
+- TTS-optimized text chunking with spaCy
+- Batch processing with context preservation
+- Real-time progress tracking and logging
 """
 
 import tkinter as tk
@@ -16,6 +23,141 @@ from datetime import datetime
 import ftfy
 import spacy
 from multi_pass_processor import MultiPassOCRProcessor
+from cryptography.fernet import Fernet
+import base64
+import hashlib
+import os
+
+# ============================================================================
+# SETTINGS MANAGER - Encrypted API Key Storage
+# ============================================================================
+
+class SettingsManager:
+    """
+    Manages application settings with encrypted API key storage.
+
+    Security features:
+    - API keys encrypted at rest using Fernet (symmetric encryption)
+    - Encryption key derived from machine-specific identifier
+    - Settings file added to .gitignore to prevent accidental commits
+    - API keys masked in all log output
+    """
+
+    SETTINGS_FILE = "settings.json"
+    GITIGNORE_FILE = ".gitignore"
+
+    def __init__(self):
+        self.settings = self._load_settings()
+        self.encryption_key = self._get_encryption_key()
+        self._ensure_gitignore()
+
+    def _get_encryption_key(self):
+        """Generate encryption key from machine-specific identifier"""
+        # Use a machine-specific value + salt for key derivation
+        # This ensures keys are tied to the machine
+        machine_id = f"{os.getlogin()}-{Path.home()}".encode()
+        salt = b"tts-preprocessor-v1"  # Application-specific salt
+
+        # Derive 32-byte key using SHA-256
+        key_material = hashlib.sha256(machine_id + salt).digest()
+        # Fernet requires base64-encoded 32-byte key
+        return base64.urlsafe_b64encode(key_material)
+
+    def _encrypt_value(self, value):
+        """Encrypt a sensitive value"""
+        if not value:
+            return ""
+        fernet = Fernet(self.encryption_key)
+        return fernet.encrypt(value.encode()).decode()
+
+    def _decrypt_value(self, encrypted_value):
+        """Decrypt a sensitive value"""
+        if not encrypted_value:
+            return ""
+        try:
+            fernet = Fernet(self.encryption_key)
+            return fernet.decrypt(encrypted_value.encode()).decode()
+        except Exception:
+            return ""  # Return empty if decryption fails
+
+    def _load_settings(self):
+        """Load settings from JSON file"""
+        if Path(self.SETTINGS_FILE).exists():
+            try:
+                with open(self.SETTINGS_FILE, 'r') as f:
+                    return json.load(f)
+            except Exception as e:
+                print(f"Warning: Could not load settings: {e}")
+                return self._default_settings()
+        return self._default_settings()
+
+    def _default_settings(self):
+        """Return default settings"""
+        return {
+            "api_key_encrypted": "",
+            "region": "singapore",  # singapore or beijing
+            "model_name": "qwen-plus",
+            "temperature": 0.2,
+            "seed": 42,
+            "batch_size": 500,
+            "max_tokens": 16000,
+            "last_input_file": "",
+            "last_output_file": "",
+            "last_prompt_file": ""
+        }
+
+    def save_settings(self):
+        """Save settings to JSON file"""
+        try:
+            with open(self.SETTINGS_FILE, 'w') as f:
+                json.dump(self.settings, f, indent=2)
+        except Exception as e:
+            print(f"Warning: Could not save settings: {e}")
+
+    def get_api_key(self):
+        """Get decrypted API key"""
+        encrypted = self.settings.get("api_key_encrypted", "")
+        return self._decrypt_value(encrypted)
+
+    def set_api_key(self, api_key):
+        """Set and encrypt API key"""
+        self.settings["api_key_encrypted"] = self._encrypt_value(api_key)
+        self.save_settings()
+
+    def get_base_url(self):
+        """Get Qwen API base URL based on region"""
+        region = self.settings.get("region", "singapore")
+        if region == "singapore":
+            return "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+        else:  # beijing
+            return "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+    def _ensure_gitignore(self):
+        """Ensure settings.json is in .gitignore"""
+        gitignore_path = Path(self.GITIGNORE_FILE)
+        gitignore_content = ""
+
+        if gitignore_path.exists():
+            with open(gitignore_path, 'r') as f:
+                gitignore_content = f.read()
+
+        # Add settings.json if not already present
+        if self.SETTINGS_FILE not in gitignore_content:
+            with open(gitignore_path, 'a') as f:
+                if gitignore_content and not gitignore_content.endswith('\n'):
+                    f.write('\n')
+                f.write(f'\n# TTS Preprocessor settings (contains encrypted API key)\n')
+                f.write(f'{self.SETTINGS_FILE}\n')
+
+    @staticmethod
+    def mask_api_key(text, api_key):
+        """Mask API key in text for logging"""
+        if not api_key or len(api_key) < 8:
+            return text
+        # Show first 4 and last 4 characters, mask the rest
+        masked = api_key[:4] + '*' * (len(api_key) - 8) + api_key[-4:]
+        return text.replace(api_key, masked)
+
 
 # ============================================================================
 # PREPROCESSING MODULE - Best-Practices Text Cleaning for TTS
@@ -868,20 +1010,33 @@ class TextPreprocessor:
 class TTSPreprocessorGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("TTS Text Preprocessor - LM Studio Edition")
+        self.root.title("TTS Text Preprocessor - Qwen API Edition")
         self.root.geometry("1400x900")
-        
+
+        # Settings manager for encrypted API key storage
+        self.settings_mgr = SettingsManager()
+
         # Variables
         self.input_file = tk.StringVar()
         self.output_file = tk.StringVar()
         self.prompt_file = tk.StringVar()
-        self.lm_host = tk.StringVar(value="http://localhost:1234/v1")
-        self.model_name = tk.StringVar(value="mistral-7b-instruct-v0.3")
-        self.temperature = tk.DoubleVar(value=0.2)
-        self.seed = tk.IntVar(value=42)
-        self.batch_size = tk.IntVar(value=500)
-        self.max_tokens = tk.IntVar(value=16000)
-        
+        self.api_key = tk.StringVar()
+        self.api_key_visible = tk.BooleanVar(value=False)
+        self.region = tk.StringVar(value=self.settings_mgr.settings.get("region", "singapore"))
+        self.model_name = tk.StringVar(value=self.settings_mgr.settings.get("model_name", "qwen-plus"))
+        self.temperature = tk.DoubleVar(value=self.settings_mgr.settings.get("temperature", 0.2))
+        self.seed = tk.IntVar(value=self.settings_mgr.settings.get("seed", 42))
+        self.batch_size = tk.IntVar(value=self.settings_mgr.settings.get("batch_size", 500))
+        self.max_tokens = tk.IntVar(value=self.settings_mgr.settings.get("max_tokens", 16000))
+
+        # Load saved file paths
+        self.input_file.set(self.settings_mgr.settings.get("last_input_file", ""))
+        self.output_file.set(self.settings_mgr.settings.get("last_output_file", ""))
+        self.prompt_file.set(self.settings_mgr.settings.get("last_prompt_file", ""))
+
+        # Load decrypted API key
+        self.api_key.set(self.settings_mgr.get_api_key())
+
         # Processing state
         self.is_processing = False
         self.is_paused = False
@@ -889,15 +1044,18 @@ class TTSPreprocessorGUI:
         self.total_batches = 0
         self.start_time = None
         self.previous_context = ""
-        
+
         # Queue for thread-safe GUI updates
         self.log_queue = queue.Queue()
-        
+
         # Build UI
         self.setup_ui()
-        
+
         # Start log queue processor
         self.process_log_queue()
+
+        # Save settings on close
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         
     def setup_ui(self):
         """Build the complete UI"""
@@ -923,17 +1081,31 @@ class TTSPreprocessorGUI:
         ttk.Entry(files_frame, textvariable=self.prompt_file, width=50).grid(row=2, column=1, padx=5)
         ttk.Button(files_frame, text="Browse...", command=self.browse_prompt).grid(row=2, column=2, padx=5)
         
-        # LM Studio Settings
-        lm_frame = ttk.Frame(config_frame)
-        lm_frame.pack(fill=tk.X, pady=5)
-        
-        ttk.Label(lm_frame, text="LM Studio Host:").grid(row=0, column=0, sticky=tk.W, padx=5)
-        ttk.Entry(lm_frame, textvariable=self.lm_host, width=30).grid(row=0, column=1, padx=5)
-        
-        ttk.Label(lm_frame, text="Model:").grid(row=0, column=2, sticky=tk.W, padx=5)
-        ttk.Entry(lm_frame, textvariable=self.model_name, width=30).grid(row=0, column=3, padx=5)
-        
-        ttk.Button(lm_frame, text="Test Connection", command=self.test_connection).grid(row=0, column=4, padx=5)
+        # Qwen API Settings
+        api_frame = ttk.Frame(config_frame)
+        api_frame.pack(fill=tk.X, pady=5)
+
+        ttk.Label(api_frame, text="API Key:").grid(row=0, column=0, sticky=tk.W, padx=5)
+        self.api_key_entry = ttk.Entry(api_frame, textvariable=self.api_key, width=40, show="*")
+        self.api_key_entry.grid(row=0, column=1, padx=5)
+        self.api_key_entry.bind('<FocusOut>', lambda e: self.save_api_key())
+
+        self.show_hide_btn = ttk.Button(api_frame, text="👁", width=3, command=self.toggle_api_key_visibility)
+        self.show_hide_btn.grid(row=0, column=2, padx=2)
+
+        ttk.Label(api_frame, text="Region:").grid(row=0, column=3, sticky=tk.W, padx=5)
+        region_combo = ttk.Combobox(api_frame, textvariable=self.region, width=12,
+                                     values=["singapore", "beijing"], state="readonly")
+        region_combo.grid(row=0, column=4, padx=5)
+        region_combo.bind('<<ComboboxSelected>>', lambda e: self.save_settings())
+
+        ttk.Label(api_frame, text="Model:").grid(row=0, column=5, sticky=tk.W, padx=5)
+        model_combo = ttk.Combobox(api_frame, textvariable=self.model_name, width=20,
+                                    values=["qwen-plus", "qwen-max", "qwen-turbo", "qwen-max-2025-01-25"])
+        model_combo.grid(row=0, column=6, padx=5)
+        model_combo.bind('<FocusOut>', lambda e: self.save_settings())
+
+        ttk.Button(api_frame, text="Test Connection", command=self.test_connection).grid(row=0, column=7, padx=5)
         
         # Model Parameters
         params_frame = ttk.Frame(config_frame)
@@ -1083,13 +1255,60 @@ class TTSPreprocessorGUI:
             self.prompt_file.set(filename)
             self.log_message(f"Prompt file selected: {filename}", 'info')
     
+    def toggle_api_key_visibility(self):
+        """Toggle API key visibility"""
+        if self.api_key_visible.get():
+            self.api_key_entry.config(show="")
+            self.api_key_visible.set(False)
+        else:
+            self.api_key_entry.config(show="*")
+            self.api_key_visible.set(True)
+
+    def save_api_key(self):
+        """Save API key to encrypted settings"""
+        api_key = self.api_key.get().strip()
+        if api_key:
+            self.settings_mgr.set_api_key(api_key)
+            self.log_message("✓ API key saved (encrypted)", 'success')
+
+    def save_settings(self):
+        """Save all settings"""
+        self.settings_mgr.settings.update({
+            "region": self.region.get(),
+            "model_name": self.model_name.get(),
+            "temperature": self.temperature.get(),
+            "seed": self.seed.get(),
+            "batch_size": self.batch_size.get(),
+            "max_tokens": self.max_tokens.get(),
+            "last_input_file": self.input_file.get(),
+            "last_output_file": self.output_file.get(),
+            "last_prompt_file": self.prompt_file.get()
+        })
+        self.settings_mgr.save_settings()
+
+    def on_closing(self):
+        """Handle window close event"""
+        self.save_settings()
+        self.root.destroy()
+
     def test_connection(self):
-        """Test connection to LM Studio"""
-        self.log_message("Testing connection to LM Studio...", 'info')
+        """Test connection to Qwen API"""
+        api_key = self.api_key.get().strip()
+
+        if not api_key:
+            messagebox.showerror("Error", "Please enter your Qwen API key first!")
+            return
+
+        self.log_message("Testing connection to Qwen API...", 'info')
+        self.log_message(f"Region: {self.region.get()}", 'info')
+        self.log_message(f"Model: {self.model_name.get()}", 'info')
+
         try:
+            base_url = self.settings_mgr.get_base_url()
+
             client = openai.OpenAI(
-                base_url=self.lm_host.get(),
-                api_key="not-needed"
+                base_url=base_url,
+                api_key=api_key
             )
 
             # Try a simple completion
@@ -1099,12 +1318,15 @@ class TTSPreprocessorGUI:
                 max_tokens=10
             )
 
-            self.log_message("✓ Connection successful! LM Studio is ready.", 'success')
-            messagebox.showinfo("Connection Test", "✓ Successfully connected to LM Studio!")
+            self.log_message("✓ Connection successful! Qwen API is ready.", 'success')
+            messagebox.showinfo("Connection Test", f"✓ Successfully connected to Qwen API!\n\nRegion: {self.region.get()}\nModel: {self.model_name.get()}")
 
         except Exception as e:
-            self.log_message(f"✗ Connection failed: {str(e)}", 'error')
-            messagebox.showerror("Connection Test", f"Failed to connect:\n{str(e)}\n\nMake sure LM Studio Local Server is running!")
+            error_msg = str(e)
+            # Mask API key in error message
+            error_msg = SettingsManager.mask_api_key(error_msg, api_key)
+            self.log_message(f"✗ Connection failed: {error_msg}", 'error')
+            messagebox.showerror("Connection Test", f"Failed to connect:\n{error_msg}\n\nPlease check:\n- API key is valid\n- Region is correct\n- Model name is correct")
 
     def preclean_input(self):
         """Pre-clean input file with detailed transformation logging"""
@@ -1509,8 +1731,13 @@ Progress:  0.0%"""
         return len(lines)
     
     def process_single_batch(self, text_batch, batch_num, context=""):
-        """Process a single batch with LM Studio"""
+        """Process a single batch with Qwen API"""
         try:
+            # Get API key
+            api_key = self.api_key.get().strip()
+            if not api_key:
+                raise ValueError("API key is required. Please set it in the settings.")
+
             # Build user message
             if context and batch_num > 1:
                 user_message = f"""CONTEXT FROM PREVIOUS BATCH (for reference only - DO NOT output):
@@ -1522,17 +1749,20 @@ NOW PROCESS THIS NEW TEXT:
 Remember: Only output the cleaned NEW text, not the context."""
             else:
                 user_message = text_batch
-            
+
             # Load system prompt
             with open(self.prompt_file.get(), 'r', encoding='utf-8') as f:
                 system_prompt = f.read()
-            
+
+            # Get base URL based on region
+            base_url = self.settings_mgr.get_base_url()
+
             # Create client
             client = openai.OpenAI(
-                base_url=self.lm_host.get(),
-                api_key="not-needed"
+                base_url=base_url,
+                api_key=api_key
             )
-            
+
             # Make request
             response = client.chat.completions.create(
                 model=self.model_name.get(),
@@ -1544,7 +1774,7 @@ Remember: Only output the cleaned NEW text, not the context."""
                 max_tokens=self.max_tokens.get(),
                 seed=self.seed.get()
             )
-            
+
             cleaned_text = response.choices[0].message.content
             next_context = self.extract_last_sentences(cleaned_text, 3)
 
@@ -1552,7 +1782,12 @@ Remember: Only output the cleaned NEW text, not the context."""
             return cleaned_text, next_context, len(user_message), len(cleaned_text)
 
         except Exception as e:
-            self.log_message(f"✗ Error processing batch {batch_num}: {str(e)}", 'error')
+            # Mask API key in error message before logging
+            error_msg = str(e)
+            api_key = self.api_key.get().strip()
+            if api_key:
+                error_msg = SettingsManager.mask_api_key(error_msg, api_key)
+            self.log_message(f"✗ Error processing batch {batch_num}: {error_msg}", 'error')
             return None, context, 0, 0
     
     def process_batches(self):
