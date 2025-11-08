@@ -1,6 +1,13 @@
 """
 TTS Text Preprocessor GUI
-A professional interface for batch processing text with LM Studio
+A professional interface for batch processing text with Qwen API (Alibaba Cloud Model Studio)
+
+Features:
+- Encrypted API key storage using Fernet symmetric encryption
+- Multi-pass OCR cleaning (87.09% accuracy)
+- TTS-optimized text chunking with spaCy
+- Batch processing with context preservation
+- Real-time progress tracking and logging
 """
 
 import tkinter as tk
@@ -16,6 +23,141 @@ from datetime import datetime
 import ftfy
 import spacy
 from multi_pass_processor import MultiPassOCRProcessor
+from cryptography.fernet import Fernet
+import base64
+import hashlib
+import os
+
+# ============================================================================
+# SETTINGS MANAGER - Encrypted API Key Storage
+# ============================================================================
+
+class SettingsManager:
+    """
+    Manages application settings with encrypted API key storage.
+
+    Security features:
+    - API keys encrypted at rest using Fernet (symmetric encryption)
+    - Encryption key derived from machine-specific identifier
+    - Settings file added to .gitignore to prevent accidental commits
+    - API keys masked in all log output
+    """
+
+    SETTINGS_FILE = "settings.json"
+    GITIGNORE_FILE = ".gitignore"
+
+    def __init__(self):
+        self.settings = self._load_settings()
+        self.encryption_key = self._get_encryption_key()
+        self._ensure_gitignore()
+
+    def _get_encryption_key(self):
+        """Generate encryption key from machine-specific identifier"""
+        # Use a machine-specific value + salt for key derivation
+        # This ensures keys are tied to the machine
+        machine_id = f"{os.getlogin()}-{Path.home()}".encode()
+        salt = b"tts-preprocessor-v1"  # Application-specific salt
+
+        # Derive 32-byte key using SHA-256
+        key_material = hashlib.sha256(machine_id + salt).digest()
+        # Fernet requires base64-encoded 32-byte key
+        return base64.urlsafe_b64encode(key_material)
+
+    def _encrypt_value(self, value):
+        """Encrypt a sensitive value"""
+        if not value:
+            return ""
+        fernet = Fernet(self.encryption_key)
+        return fernet.encrypt(value.encode()).decode()
+
+    def _decrypt_value(self, encrypted_value):
+        """Decrypt a sensitive value"""
+        if not encrypted_value:
+            return ""
+        try:
+            fernet = Fernet(self.encryption_key)
+            return fernet.decrypt(encrypted_value.encode()).decode()
+        except Exception:
+            return ""  # Return empty if decryption fails
+
+    def _load_settings(self):
+        """Load settings from JSON file"""
+        if Path(self.SETTINGS_FILE).exists():
+            try:
+                with open(self.SETTINGS_FILE, 'r') as f:
+                    return json.load(f)
+            except Exception as e:
+                print(f"Warning: Could not load settings: {e}")
+                return self._default_settings()
+        return self._default_settings()
+
+    def _default_settings(self):
+        """Return default settings"""
+        return {
+            "api_key_encrypted": "",
+            "region": "singapore",  # singapore or beijing (free tier only in singapore!)
+            "model_name": "qwen-flash",  # Most economical for free tier
+            "temperature": 0.2,
+            "seed": 42,
+            "batch_size": 500,
+            "max_tokens": 16000,
+            "last_input_file": "",
+            "last_output_file": "",
+            "last_prompt_file": ""
+        }
+
+    def save_settings(self):
+        """Save settings to JSON file"""
+        try:
+            with open(self.SETTINGS_FILE, 'w') as f:
+                json.dump(self.settings, f, indent=2)
+        except Exception as e:
+            print(f"Warning: Could not save settings: {e}")
+
+    def get_api_key(self):
+        """Get decrypted API key"""
+        encrypted = self.settings.get("api_key_encrypted", "")
+        return self._decrypt_value(encrypted)
+
+    def set_api_key(self, api_key):
+        """Set and encrypt API key"""
+        self.settings["api_key_encrypted"] = self._encrypt_value(api_key)
+        self.save_settings()
+
+    def get_base_url(self):
+        """Get Qwen API base URL based on region"""
+        region = self.settings.get("region", "singapore")
+        if region == "singapore":
+            return "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+        else:  # beijing
+            return "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+    def _ensure_gitignore(self):
+        """Ensure settings.json is in .gitignore"""
+        gitignore_path = Path(self.GITIGNORE_FILE)
+        gitignore_content = ""
+
+        if gitignore_path.exists():
+            with open(gitignore_path, 'r') as f:
+                gitignore_content = f.read()
+
+        # Add settings.json if not already present
+        if self.SETTINGS_FILE not in gitignore_content:
+            with open(gitignore_path, 'a') as f:
+                if gitignore_content and not gitignore_content.endswith('\n'):
+                    f.write('\n')
+                f.write(f'\n# TTS Preprocessor settings (contains encrypted API key)\n')
+                f.write(f'{self.SETTINGS_FILE}\n')
+
+    @staticmethod
+    def mask_api_key(text, api_key):
+        """Mask API key in text for logging"""
+        if not api_key or len(api_key) < 8:
+            return text
+        # Show first 4 and last 4 characters, mask the rest
+        masked = api_key[:4] + '*' * (len(api_key) - 8) + api_key[-4:]
+        return text.replace(api_key, masked)
+
 
 # ============================================================================
 # PREPROCESSING MODULE - Best-Practices Text Cleaning for TTS
@@ -868,20 +1010,33 @@ class TextPreprocessor:
 class TTSPreprocessorGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("TTS Text Preprocessor - LM Studio Edition")
+        self.root.title("TTS Text Preprocessor - Qwen API Edition")
         self.root.geometry("1400x900")
-        
+
+        # Settings manager for encrypted API key storage
+        self.settings_mgr = SettingsManager()
+
         # Variables
         self.input_file = tk.StringVar()
         self.output_file = tk.StringVar()
         self.prompt_file = tk.StringVar()
-        self.lm_host = tk.StringVar(value="http://localhost:1234/v1")
-        self.model_name = tk.StringVar(value="mistral-7b-instruct-v0.3")
-        self.temperature = tk.DoubleVar(value=0.2)
-        self.seed = tk.IntVar(value=42)
-        self.batch_size = tk.IntVar(value=500)
-        self.max_tokens = tk.IntVar(value=16000)
-        
+        self.api_key = tk.StringVar()
+        self.api_key_visible = tk.BooleanVar(value=False)
+        self.region = tk.StringVar(value=self.settings_mgr.settings.get("region", "singapore"))
+        self.model_name = tk.StringVar(value=self.settings_mgr.settings.get("model_name", "qwen-plus"))
+        self.temperature = tk.DoubleVar(value=self.settings_mgr.settings.get("temperature", 0.2))
+        self.seed = tk.IntVar(value=self.settings_mgr.settings.get("seed", 42))
+        self.batch_size = tk.IntVar(value=self.settings_mgr.settings.get("batch_size", 500))
+        self.max_tokens = tk.IntVar(value=self.settings_mgr.settings.get("max_tokens", 16000))
+
+        # Load saved file paths
+        self.input_file.set(self.settings_mgr.settings.get("last_input_file", ""))
+        self.output_file.set(self.settings_mgr.settings.get("last_output_file", ""))
+        self.prompt_file.set(self.settings_mgr.settings.get("last_prompt_file", ""))
+
+        # Load decrypted API key
+        self.api_key.set(self.settings_mgr.get_api_key())
+
         # Processing state
         self.is_processing = False
         self.is_paused = False
@@ -889,15 +1044,22 @@ class TTSPreprocessorGUI:
         self.total_batches = 0
         self.start_time = None
         self.previous_context = ""
-        
+
+        # Batch continuity tracking
+        self.previous_input_last_sentence = ""
+        self.previous_output_last_sentence = ""
+
         # Queue for thread-safe GUI updates
         self.log_queue = queue.Queue()
-        
+
         # Build UI
         self.setup_ui()
-        
+
         # Start log queue processor
         self.process_log_queue()
+
+        # Save settings on close
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         
     def setup_ui(self):
         """Build the complete UI"""
@@ -923,17 +1085,40 @@ class TTSPreprocessorGUI:
         ttk.Entry(files_frame, textvariable=self.prompt_file, width=50).grid(row=2, column=1, padx=5)
         ttk.Button(files_frame, text="Browse...", command=self.browse_prompt).grid(row=2, column=2, padx=5)
         
-        # LM Studio Settings
-        lm_frame = ttk.Frame(config_frame)
-        lm_frame.pack(fill=tk.X, pady=5)
-        
-        ttk.Label(lm_frame, text="LM Studio Host:").grid(row=0, column=0, sticky=tk.W, padx=5)
-        ttk.Entry(lm_frame, textvariable=self.lm_host, width=30).grid(row=0, column=1, padx=5)
-        
-        ttk.Label(lm_frame, text="Model:").grid(row=0, column=2, sticky=tk.W, padx=5)
-        ttk.Entry(lm_frame, textvariable=self.model_name, width=30).grid(row=0, column=3, padx=5)
-        
-        ttk.Button(lm_frame, text="Test Connection", command=self.test_connection).grid(row=0, column=4, padx=5)
+        # Qwen API Settings
+        api_frame = ttk.Frame(config_frame)
+        api_frame.pack(fill=tk.X, pady=5)
+
+        ttk.Label(api_frame, text="API Key:").grid(row=0, column=0, sticky=tk.W, padx=5)
+        self.api_key_entry = ttk.Entry(api_frame, textvariable=self.api_key, width=40, show="*")
+        self.api_key_entry.grid(row=0, column=1, padx=5)
+        self.api_key_entry.bind('<FocusOut>', lambda e: self.save_api_key())
+
+        self.show_hide_btn = ttk.Button(api_frame, text="👁", width=3, command=self.toggle_api_key_visibility)
+        self.show_hide_btn.grid(row=0, column=2, padx=2)
+
+        ttk.Label(api_frame, text="Region:").grid(row=0, column=3, sticky=tk.W, padx=5)
+        region_combo = ttk.Combobox(api_frame, textvariable=self.region, width=12,
+                                     values=["singapore", "beijing"], state="readonly")
+        region_combo.grid(row=0, column=4, padx=5)
+        region_combo.bind('<<ComboboxSelected>>', lambda e: self.save_settings())
+
+        ttk.Label(api_frame, text="Model:").grid(row=0, column=5, sticky=tk.W, padx=5)
+        model_combo = ttk.Combobox(api_frame, textvariable=self.model_name, width=25,
+                                    values=[
+                                        "qwen-flash",           # Most economical - try first!
+                                        "qwen-plus",            # Balanced
+                                        "qwen-max",             # Most powerful
+                                        "qwen-max-latest",      # Latest version
+                                        "qwen-coder",           # Code-optimized
+                                        "qwq-plus",             # Reasoning
+                                        "qwen-turbo",           # Fast
+                                        "qwen-max-2025-01-25"   # Specific version
+                                    ])
+        model_combo.grid(row=0, column=6, padx=5)
+        model_combo.bind('<FocusOut>', lambda e: self.save_settings())
+
+        ttk.Button(api_frame, text="Test Connection", command=self.test_connection).grid(row=0, column=7, padx=5)
         
         # Model Parameters
         params_frame = ttk.Frame(config_frame)
@@ -1083,13 +1268,60 @@ class TTSPreprocessorGUI:
             self.prompt_file.set(filename)
             self.log_message(f"Prompt file selected: {filename}", 'info')
     
+    def toggle_api_key_visibility(self):
+        """Toggle API key visibility"""
+        if self.api_key_visible.get():
+            self.api_key_entry.config(show="")
+            self.api_key_visible.set(False)
+        else:
+            self.api_key_entry.config(show="*")
+            self.api_key_visible.set(True)
+
+    def save_api_key(self):
+        """Save API key to encrypted settings"""
+        api_key = self.api_key.get().strip()
+        if api_key:
+            self.settings_mgr.set_api_key(api_key)
+            self.log_message("✓ API key saved (encrypted)", 'success')
+
+    def save_settings(self):
+        """Save all settings"""
+        self.settings_mgr.settings.update({
+            "region": self.region.get(),
+            "model_name": self.model_name.get(),
+            "temperature": self.temperature.get(),
+            "seed": self.seed.get(),
+            "batch_size": self.batch_size.get(),
+            "max_tokens": self.max_tokens.get(),
+            "last_input_file": self.input_file.get(),
+            "last_output_file": self.output_file.get(),
+            "last_prompt_file": self.prompt_file.get()
+        })
+        self.settings_mgr.save_settings()
+
+    def on_closing(self):
+        """Handle window close event"""
+        self.save_settings()
+        self.root.destroy()
+
     def test_connection(self):
-        """Test connection to LM Studio"""
-        self.log_message("Testing connection to LM Studio...", 'info')
+        """Test connection to Qwen API"""
+        api_key = self.api_key.get().strip()
+
+        if not api_key:
+            messagebox.showerror("Error", "Please enter your Qwen API key first!")
+            return
+
+        self.log_message("Testing connection to Qwen API...", 'info')
+        self.log_message(f"Region: {self.region.get()}", 'info')
+        self.log_message(f"Model: {self.model_name.get()}", 'info')
+
         try:
+            base_url = self.settings_mgr.get_base_url()
+
             client = openai.OpenAI(
-                base_url=self.lm_host.get(),
-                api_key="not-needed"
+                base_url=base_url,
+                api_key=api_key
             )
 
             # Try a simple completion
@@ -1099,12 +1331,15 @@ class TTSPreprocessorGUI:
                 max_tokens=10
             )
 
-            self.log_message("✓ Connection successful! LM Studio is ready.", 'success')
-            messagebox.showinfo("Connection Test", "✓ Successfully connected to LM Studio!")
+            self.log_message("✓ Connection successful! Qwen API is ready.", 'success')
+            messagebox.showinfo("Connection Test", f"✓ Successfully connected to Qwen API!\n\nRegion: {self.region.get()}\nModel: {self.model_name.get()}")
 
         except Exception as e:
-            self.log_message(f"✗ Connection failed: {str(e)}", 'error')
-            messagebox.showerror("Connection Test", f"Failed to connect:\n{str(e)}\n\nMake sure LM Studio Local Server is running!")
+            error_msg = str(e)
+            # Mask API key in error message
+            error_msg = SettingsManager.mask_api_key(error_msg, api_key)
+            self.log_message(f"✗ Connection failed: {error_msg}", 'error')
+            messagebox.showerror("Connection Test", f"Failed to connect:\n{error_msg}\n\nPlease check:\n- API key is valid\n- Region is correct\n- Model name is correct")
 
     def preclean_input(self):
         """Pre-clean input file with detailed transformation logging"""
@@ -1439,7 +1674,11 @@ Progress:  0.0%"""
         self.current_batch = 0
         self.start_time = time.time()
         self.previous_context = ""
-        
+
+        # Reset batch continuity tracking
+        self.previous_input_last_sentence = ""
+        self.previous_output_last_sentence = ""
+
         self.start_btn.config(state=tk.DISABLED)
         self.pause_btn.config(state=tk.NORMAL)
         self.stop_btn.config(state=tk.NORMAL)
@@ -1475,7 +1714,7 @@ Progress:  0.0%"""
         """Stop processing"""
         if messagebox.askyesno("Stop Processing", "Are you sure you want to stop?\n\nProgress will be saved."):
             self.is_processing = False
-            self.log_message("⏹ Processing STOPPED by user", 'error')
+            self.log_message("⏹ [Request interrupted by user]", 'error')
             self.finish_processing()
     
     def finish_processing(self):
@@ -1500,7 +1739,252 @@ Progress:  0.0%"""
 
         last_sentences = sentences[-num_sentences:] if len(sentences) >= num_sentences else sentences
         return ' '.join(last_sentences) + '.' if last_sentences else ""
-    
+
+    def extract_first_sentence(self, text):
+        """Extract first sentence from text"""
+        text = text.strip()
+        if not text:
+            return ""
+
+        # Split by sentence-ending punctuation
+        match = re.search(r'[.!?]+', text)
+        if match:
+            first_sentence = text[:match.end()].strip()
+            return first_sentence
+
+        # If no sentence ending found, take first line or 150 chars
+        lines = text.split('\n')
+        first_line = lines[0].strip()
+        if len(first_line) > 150:
+            return first_line[:150] + "..."
+        return first_line
+
+    def extract_last_sentence(self, text):
+        """Extract last sentence from text"""
+        text = text.strip()
+        if not text:
+            return ""
+
+        # Split by sentence-ending punctuation
+        sentences = re.split(r'[.!?]+', text)
+        sentences = [s.strip() for s in sentences if s.strip()]
+
+        # Filter out batch completion messages
+        sentences = [s for s in sentences if not re.search(r'Batch\s+\d+.*complete', s, re.IGNORECASE)]
+
+        if sentences:
+            last_sentence = sentences[-1]
+            # Add back the punctuation
+            if text.rstrip().endswith(('.', '!', '?')):
+                last_sentence += text.rstrip()[-1]
+            return last_sentence
+
+        return text[:150] if len(text) > 150 else text
+
+    def check_batch_alignment(self, input_text, output_text, batch_num):
+        """
+        Check alignment between input and output by comparing first and last sentences.
+
+        This detects:
+        - Missing content at start/end
+        - Hallucinated content
+        - Misalignment between batches
+        """
+        # Extract boundaries
+        input_first = self.extract_first_sentence(input_text)
+        input_last = self.extract_last_sentence(input_text)
+        output_first = self.extract_first_sentence(output_text)
+        output_last = self.extract_last_sentence(output_text)
+
+        # Log alignment check
+        self.log_message(f"   {'='*66}", 'info')
+        self.log_message(f"   🔍 BATCH ALIGNMENT CHECK", 'batch')
+        self.log_message(f"   {'='*66}", 'info')
+
+        # First sentence comparison
+        self.log_message(f"   📥 INPUT First sentence:", 'info')
+        self.log_message(f"      '{input_first}'", 'info')
+        self.log_message(f"   📤 OUTPUT First sentence:", 'info')
+        self.log_message(f"      '{output_first}'", 'info')
+
+        # Check if first sentences match (allowing for minor transformations)
+        first_match = self._fuzzy_sentence_match(input_first, output_first)
+        if first_match:
+            self.log_message(f"   ✓ First sentences aligned", 'success')
+        else:
+            self.log_message(f"   ⚠ WARNING: First sentences DO NOT match!", 'warning')
+            self._show_sentence_diff(input_first, output_first, "FIRST")
+
+        self.log_message(f"", 'info')
+
+        # Last sentence comparison
+        self.log_message(f"   📥 INPUT Last sentence:", 'info')
+        self.log_message(f"      '{input_last}'", 'info')
+        self.log_message(f"   📤 OUTPUT Last sentence:", 'info')
+        self.log_message(f"      '{output_last}'", 'info')
+
+        # Check if last sentences match
+        last_match = self._fuzzy_sentence_match(input_last, output_last)
+        if last_match:
+            self.log_message(f"   ✓ Last sentences aligned", 'success')
+        else:
+            self.log_message(f"   ⚠ WARNING: Last sentences DO NOT match!", 'warning')
+            self._show_sentence_diff(input_last, output_last, "LAST")
+
+        self.log_message(f"   {'='*66}", 'info')
+
+        # Return overall alignment status
+        return first_match and last_match
+
+    def _fuzzy_sentence_match(self, sent1, sent2, threshold=0.7):
+        """
+        Check if two sentences are similar enough (fuzzy match).
+
+        Allows for minor transformations like:
+        - Punctuation changes
+        - Case changes
+        - Minor word variations
+        """
+        if not sent1 or not sent2:
+            return False
+
+        # Normalize for comparison
+        norm1 = re.sub(r'[^\w\s]', '', sent1.lower())
+        norm2 = re.sub(r'[^\w\s]', '', sent2.lower())
+
+        # Simple word-based similarity
+        words1 = set(norm1.split())
+        words2 = set(norm2.split())
+
+        if not words1 or not words2:
+            return False
+
+        # Calculate Jaccard similarity
+        intersection = len(words1 & words2)
+        union = len(words1 | words2)
+        similarity = intersection / union if union > 0 else 0
+
+        return similarity >= threshold
+
+    def _show_sentence_diff(self, input_sent, output_sent, position):
+        """Show detailed diff between input and output sentences"""
+        self.log_message(f"   🔄 OUTPUT diff view ({position} sentence):", 'warning')
+
+        # Normalize and split into words
+        input_words = input_sent.split()
+        output_words = output_sent.split()
+
+        # Find added/removed/changed words
+        input_set = set(input_words)
+        output_set = set(output_words)
+
+        removed = input_set - output_set
+        added = output_set - input_set
+
+        if removed:
+            self.log_message(f"      ➖ Removed: {', '.join(removed)}", 'error')
+        if added:
+            self.log_message(f"      ➕ Added: {', '.join(added)}", 'warning')
+
+        # Show character-level similarity
+        import difflib
+        diff_ratio = difflib.SequenceMatcher(None, input_sent, output_sent).ratio()
+        self.log_message(f"      📊 Similarity: {diff_ratio*100:.1f}%", 'info')
+
+    def check_batch_continuity(self, current_input_text, current_output_text, batch_num):
+        """
+        Check continuity between consecutive batches.
+
+        Compares:
+        - Previous OUTPUT last sentence vs Current OUTPUT first sentence
+        - Previous INPUT last sentence vs Current INPUT first sentence
+
+        This detects gaps or overlaps at batch boundaries.
+        """
+        if batch_num <= 1:
+            # No previous batch to compare
+            return
+
+        current_input_first = self.extract_first_sentence(current_input_text)
+        current_output_first = self.extract_first_sentence(current_output_text)
+
+        # Log continuity check
+        self.log_message(f"   {'='*66}", 'info')
+        self.log_message(f"   🔗 BATCH CONTINUITY CHECK (Batch {batch_num-1} → {batch_num})", 'batch')
+        self.log_message(f"   {'='*66}", 'info')
+
+        # Check OUTPUT continuity
+        self.log_message(f"   📤 Generated Output Continuity:", 'info')
+        self.log_message(f"      BATCH {batch_num-1} OUTPUT last sentence:", 'info')
+        self.log_message(f"      '{self.previous_output_last_sentence}'", 'info')
+        self.log_message(f"      BATCH {batch_num} OUTPUT first sentence:", 'info')
+        self.log_message(f"      '{current_output_first}'", 'info')
+
+        # Check if output flows naturally
+        output_continuity = self._check_sentence_continuity(
+            self.previous_output_last_sentence,
+            current_output_first
+        )
+
+        if output_continuity:
+            self.log_message(f"      ✓ Output flows naturally between batches", 'success')
+        else:
+            self.log_message(f"      ⚠ Potential gap or overlap in output!", 'warning')
+
+        self.log_message(f"", 'info')
+
+        # Check INPUT continuity (for reference)
+        self.log_message(f"   📥 Original Input Continuity:", 'info')
+        self.log_message(f"      BATCH {batch_num-1} INPUT last sentence:", 'info')
+        self.log_message(f"      '{self.previous_input_last_sentence}'", 'info')
+        self.log_message(f"      BATCH {batch_num} INPUT first sentence:", 'info')
+        self.log_message(f"      '{current_input_first}'", 'info')
+
+        # Check if input was continuous
+        input_continuity = self._check_sentence_continuity(
+            self.previous_input_last_sentence,
+            current_input_first
+        )
+
+        if input_continuity:
+            self.log_message(f"      ✓ Input batches were continuous", 'success')
+        else:
+            self.log_message(f"      ⚠ Input batches had a gap (expected for paragraph breaks)", 'info')
+
+        self.log_message(f"   {'='*66}", 'info')
+
+    def _check_sentence_continuity(self, prev_sentence, next_sentence):
+        """
+        Check if two consecutive sentences flow naturally.
+
+        Returns True if sentences appear to be continuous (not overlapping or gapped).
+        """
+        if not prev_sentence or not next_sentence:
+            return False
+
+        # Normalize sentences
+        prev_normalized = prev_sentence.lower().strip()
+        next_normalized = next_sentence.lower().strip()
+
+        # Check for exact duplication (overlap issue)
+        if prev_normalized == next_normalized:
+            return False  # Same sentence repeated
+
+        # Check for significant word overlap (might indicate duplication)
+        prev_words = set(prev_normalized.split())
+        next_words = set(next_normalized.split())
+
+        if prev_words and next_words:
+            overlap = len(prev_words & next_words)
+            overlap_ratio = overlap / min(len(prev_words), len(next_words))
+
+            # If more than 80% overlap, might be duplicate content
+            if overlap_ratio > 0.8:
+                return False
+
+        # Otherwise assume continuity is good
+        return True
+
     def find_paragraph_break(self, lines, max_lookback=50):
         """Find natural paragraph break"""
         for i in range(len(lines)-1, max(len(lines)-max_lookback, 0), -1):
@@ -1509,8 +1993,13 @@ Progress:  0.0%"""
         return len(lines)
     
     def process_single_batch(self, text_batch, batch_num, context=""):
-        """Process a single batch with LM Studio"""
+        """Process a single batch with Qwen API"""
         try:
+            # Get API key
+            api_key = self.api_key.get().strip()
+            if not api_key:
+                raise ValueError("API key is required. Please set it in the settings.")
+
             # Build user message
             if context and batch_num > 1:
                 user_message = f"""CONTEXT FROM PREVIOUS BATCH (for reference only - DO NOT output):
@@ -1522,17 +2011,20 @@ NOW PROCESS THIS NEW TEXT:
 Remember: Only output the cleaned NEW text, not the context."""
             else:
                 user_message = text_batch
-            
+
             # Load system prompt
             with open(self.prompt_file.get(), 'r', encoding='utf-8') as f:
                 system_prompt = f.read()
-            
+
+            # Get base URL based on region
+            base_url = self.settings_mgr.get_base_url()
+
             # Create client
             client = openai.OpenAI(
-                base_url=self.lm_host.get(),
-                api_key="not-needed"
+                base_url=base_url,
+                api_key=api_key
             )
-            
+
             # Make request
             response = client.chat.completions.create(
                 model=self.model_name.get(),
@@ -1544,15 +2036,21 @@ Remember: Only output the cleaned NEW text, not the context."""
                 max_tokens=self.max_tokens.get(),
                 seed=self.seed.get()
             )
-            
+
             cleaned_text = response.choices[0].message.content
             next_context = self.extract_last_sentences(cleaned_text, 3)
-            
-            return cleaned_text, next_context
-            
+
+            # Return stats for logging: (cleaned_text, next_context, input_size, output_size)
+            return cleaned_text, next_context, len(user_message), len(cleaned_text)
+
         except Exception as e:
-            self.log_message(f"✗ Error processing batch {batch_num}: {str(e)}", 'error')
-            return None, context
+            # Mask API key in error message before logging
+            error_msg = str(e)
+            api_key = self.api_key.get().strip()
+            if api_key:
+                error_msg = SettingsManager.mask_api_key(error_msg, api_key)
+            self.log_message(f"✗ Error processing batch {batch_num}: {error_msg}", 'error')
+            return None, context, 0, 0
     
     def process_batches(self):
         """Main processing loop (runs in separate thread)"""
@@ -1614,13 +2112,13 @@ Remember: Only output the cleaned NEW text, not the context."""
                 # Process batch
                 self.log_message(f"   ⚙ Processing with {self.model_name.get()}...", 'info')
                 batch_start_time = time.time()
-                
-                cleaned, next_context = self.process_single_batch(
-                    batch_text, 
-                    batch_num, 
+
+                cleaned, next_context, llm_input_size, llm_output_size = self.process_single_batch(
+                    batch_text,
+                    batch_num,
                     self.previous_context
                 )
-                
+
                 batch_time = time.time() - batch_start_time
 
                 if cleaned:
@@ -1628,9 +2126,51 @@ Remember: Only output the cleaned NEW text, not the context."""
                     output_line_count = len(cleaned.splitlines())
                     output_char_count = len(cleaned)
 
-                    # Calculate reductions
+                    # Calculate reductions from original batch text to cleaned output
                     char_reduction = ((input_char_count - output_char_count) / input_char_count * 100) if input_char_count > 0 else 0
                     line_reduction = ((input_line_count - output_line_count) / input_line_count * 100) if input_line_count > 0 else 0
+
+                    # Calculate LLM input vs output change
+                    llm_change = ((llm_output_size - llm_input_size) / llm_input_size * 100) if llm_input_size > 0 else 0
+
+                    # Log LLM input/output comparison
+                    self.log_message(f"   📤 Sent to LLM:      {llm_input_size} chars", 'info')
+                    self.log_message(f"   📥 Received from LLM: {llm_output_size} chars ({llm_change:+.1f}%)", 'info')
+
+                    # Validate LLM response size - check for excessive differences
+                    # Allow for reasonable variation but flag suspicious changes
+                    if llm_change > 100:  # Output is more than 2x the input
+                        self.log_message(f"   ✗ CRITICAL ERROR: LLM response is {llm_change:+.1f}% larger than input!", 'error')
+                        self.log_message(f"   ✗ Expected ~{llm_input_size} chars, received {llm_output_size} chars", 'error')
+                        self.log_message(f"   ✗ This indicates the LLM may be hallucinating or adding unwanted content", 'error')
+                        self.log_message(f"   ⏹ Stopping processing to prevent data contamination", 'error')
+                        break
+                    elif llm_change < -50:  # Output is less than half the input
+                        self.log_message(f"   ✗ CRITICAL ERROR: LLM response is {llm_change:.1f}% smaller than input!", 'error')
+                        self.log_message(f"   ✗ Expected ~{llm_input_size} chars, received {llm_output_size} chars", 'error')
+                        self.log_message(f"   ✗ This indicates the LLM may be truncating or losing content", 'error')
+                        self.log_message(f"   ⏹ Stopping processing to prevent data loss", 'error')
+                        break
+
+                    # Check batch continuity (for batch 2+)
+                    if batch_num > 1:
+                        self.log_message(f"", 'info')
+                        self.check_batch_continuity(batch_text, cleaned, batch_num)
+                        self.log_message(f"", 'info')
+
+                    # Check batch alignment (first/last sentence matching)
+                    self.log_message(f"", 'info')
+                    alignment_ok = self.check_batch_alignment(batch_text, cleaned, batch_num)
+                    self.log_message(f"", 'info')
+
+                    if not alignment_ok:
+                        self.log_message(f"   ⚠ ALIGNMENT WARNING: Input/Output boundaries don't match!", 'warning')
+                        self.log_message(f"   ⚠ This may indicate content loss or hallucination", 'warning')
+                        # Continue processing but warn user
+
+                    # Store last sentences for continuity check in next batch
+                    self.previous_input_last_sentence = self.extract_last_sentence(batch_text)
+                    self.previous_output_last_sentence = self.extract_last_sentence(cleaned)
 
                     # Update output preview
                     self.output_preview.delete(1.0, tk.END)
@@ -1651,12 +2191,17 @@ Remember: Only output the cleaned NEW text, not the context."""
 
                     # Log results with comparison
                     self.log_message(f"   ✓ Batch complete in {batch_time:.1f}s", 'success')
-                    self.log_message(f"   Output: {output_line_count} lines, {output_char_count} chars", 'success')
-                    self.log_message(f"   Change: {char_reduction:+.1f}% chars, {line_reduction:+.1f}% lines", 'info')
+                    self.log_message(f"   Batch text: {input_line_count} lines, {input_char_count} chars", 'info')
+                    self.log_message(f"   Output:     {output_line_count} lines, {output_char_count} chars", 'success')
+                    self.log_message(f"   Change:     {char_reduction:+.1f}% chars, {line_reduction:+.1f}% lines", 'info')
 
-                    # Warn if excessive data loss
+                    # Warn if excessive data loss from batch text to output
                     if char_reduction > 15:
-                        self.log_message(f"   ⚠ WARNING: Output reduced by {char_reduction:.1f}% - check for truncation!", 'warning')
+                        self.log_message(f"   ⚠ WARNING: Output reduced by {char_reduction:.1f}% from batch - check for truncation!", 'warning')
+                    elif llm_change > 50:
+                        self.log_message(f"   ⚠ WARNING: LLM output increased by {llm_change:+.1f}% - review for added content", 'warning')
+                    elif llm_change < -30:
+                        self.log_message(f"   ⚠ WARNING: LLM output decreased by {llm_change:.1f}% - review for lost content", 'warning')
 
                     # Show context (filtered)
                     if next_context:

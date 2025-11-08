@@ -39,3 +39,6 @@ Thumbs.db
 # Project specific
 OUTPUT.txt
 *_PRECLEANED.txt
+
+# TTS Preprocessor settings (contains encrypted API key)
+settings.json

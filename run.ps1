@@ -26,27 +26,22 @@ Write-Host "[1/6] Checking Python installation..." -ForegroundColor Yellow
 if (-not (Test-Command python)) {
     Write-Host "ERROR: Python is not installed or not in PATH!" -ForegroundColor Red
     Write-Host "Please install Python 3.8+ from https://www.python.org/" -ForegroundColor Red
-    Write-Host ""
-    Read-Host "Press Enter to exit"
     exit 1
 }
 
 $pythonVersion = python --version
-Write-Host "  ✓ Found: $pythonVersion" -ForegroundColor Green
+Write-Host "  Found: $pythonVersion" -ForegroundColor Green
 
 # Check pip
-Write-Host ""
 Write-Host "[2/6] Checking pip installation..." -ForegroundColor Yellow
 if (-not (Test-Command pip)) {
     Write-Host "ERROR: pip is not installed!" -ForegroundColor Red
     Write-Host "Please install pip or reinstall Python with pip enabled" -ForegroundColor Red
-    Write-Host ""
-    Read-Host "Press Enter to exit"
     exit 1
 }
 
 $pipVersion = pip --version
-Write-Host "  ✓ Found: $pipVersion" -ForegroundColor Green
+Write-Host "  Found: $pipVersion" -ForegroundColor Green
 
 # Check and install required packages
 Write-Host ""
@@ -63,7 +58,7 @@ $missingPackages = @()
 foreach ($pkg in $requiredPackages) {
     Write-Host "  Checking $($pkg.Name)..." -NoNewline
     if (Test-PythonPackage $pkg.ImportName) {
-        Write-Host " ✓ Installed" -ForegroundColor Green
+        Write-Host " Installed" -ForegroundColor Green
     } else {
         Write-Host " ✗ Missing" -ForegroundColor Red
         $missingPackages += $pkg.Name
@@ -82,15 +77,14 @@ if ($missingPackages.Count -gt 0) {
         if ($LASTEXITCODE -ne 0) {
             Write-Host "  ERROR: Failed to install $pkg" -ForegroundColor Red
             Write-Host ""
-            Read-Host "Press Enter to exit"
             exit 1
         }
     }
 
-    Write-Host "  ✓ All packages installed successfully" -ForegroundColor Green
+    Write-Host "  All packages installed successfully" -ForegroundColor Green
 } else {
     Write-Host ""
-    Write-Host "[4/6] All required packages are already installed ✓" -ForegroundColor Green
+    Write-Host "[4/6] All required packages are already installed " -ForegroundColor Green
 }
 
 # Check spaCy model
@@ -105,13 +99,12 @@ if ($LASTEXITCODE -ne 0) {
     if ($LASTEXITCODE -ne 0) {
         Write-Host "  ERROR: Failed to download spaCy model" -ForegroundColor Red
         Write-Host ""
-        Read-Host "Press Enter to exit"
         exit 1
     }
 
-    Write-Host "  ✓ spaCy model installed successfully" -ForegroundColor Green
+    Write-Host "  spaCy model installed successfully" -ForegroundColor Green
 } else {
-    Write-Host "  ✓ spaCy model 'en_core_web_sm' is installed" -ForegroundColor Green
+    Write-Host "  spaCy model 'en_core_web_sm' is installed" -ForegroundColor Green
 }
 
 # Launch the GUI
@@ -128,7 +121,6 @@ if (-not (Test-Path "tts_preprocessor_gui.py")) {
     Write-Host "ERROR: tts_preprocessor_gui.py not found in current directory!" -ForegroundColor Red
     Write-Host "Please run this script from the repository root directory." -ForegroundColor Red
     Write-Host ""
-    Read-Host "Press Enter to exit"
     exit 1
 }
 
@@ -137,8 +129,5 @@ python tts_preprocessor_gui.py
 
 # If GUI exits with error
 if ($LASTEXITCODE -ne 0) {
-    Write-Host ""
-    Write-Host "Application exited with error code: $LASTEXITCODE" -ForegroundColor Red
-    Write-Host ""
-    Read-Host "Press Enter to exit"
+    Write-Host $LASTEXITCODE
 }
