@@ -6,7 +6,6 @@
 
 A professional text preprocessing application for converting OCR output into clean, TTS-ready text. Features a production-ready multi-pass OCR processor achieving **87.09% accuracy** and comprehensive TTS normalization.
 
-![TTS Text Preprocessor GUI](docs/gui_screenshot.png)
 *Professional interface with real-time processing and detailed transformation logging*
 
 ## ✨ Features
