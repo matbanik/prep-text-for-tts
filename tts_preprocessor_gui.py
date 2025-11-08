@@ -1,6 +1,6 @@
 """
 TTS Text Preprocessor GUI
-A professional interface for batch processing text with Qwen API (Alibaba Cloud Model Studio)
+A professional interface for batch processing text with OpenRouter API
 
 Features:
 - Encrypted API key storage using Fernet symmetric encryption
@@ -95,8 +95,7 @@ class SettingsManager:
         """Return default settings"""
         return {
             "api_key_encrypted": "",
-            "region": "singapore",  # singapore or beijing (free tier only in singapore!)
-            "model_name": "qwen-flash",  # Most economical for free tier
+            "model_name": "qwen/qwen-2.5-72b-instruct",  # Default OpenRouter model
             "temperature": 0.2,
             "seed": 42,
             "batch_size": 500,
@@ -125,12 +124,8 @@ class SettingsManager:
         self.save_settings()
 
     def get_base_url(self):
-        """Get Qwen API base URL based on region"""
-        region = self.settings.get("region", "singapore")
-        if region == "singapore":
-            return "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
-        else:  # beijing
-            return "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        """Get OpenRouter API base URL"""
+        return "https://openrouter.ai/api/v1"
 
     def _ensure_gitignore(self):
         """Ensure settings.json is in .gitignore"""
@@ -1010,7 +1005,7 @@ class TextPreprocessor:
 class TTSPreprocessorGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("TTS Text Preprocessor - Qwen API Edition")
+        self.root.title("TTS Text Preprocessor - OpenRouter Edition")
         self.root.geometry("1400x900")
 
         # Settings manager for encrypted API key storage
@@ -1022,8 +1017,7 @@ class TTSPreprocessorGUI:
         self.prompt_file = tk.StringVar()
         self.api_key = tk.StringVar()
         self.api_key_visible = tk.BooleanVar(value=False)
-        self.region = tk.StringVar(value=self.settings_mgr.settings.get("region", "singapore"))
-        self.model_name = tk.StringVar(value=self.settings_mgr.settings.get("model_name", "qwen-plus"))
+        self.model_name = tk.StringVar(value=self.settings_mgr.settings.get("model_name", "qwen/qwen-2.5-72b-instruct"))
         self.temperature = tk.DoubleVar(value=self.settings_mgr.settings.get("temperature", 0.2))
         self.seed = tk.IntVar(value=self.settings_mgr.settings.get("seed", 42))
         self.batch_size = tk.IntVar(value=self.settings_mgr.settings.get("batch_size", 500))
@@ -1084,8 +1078,8 @@ class TTSPreprocessorGUI:
         ttk.Label(files_frame, text="Prompt File:").grid(row=2, column=0, sticky=tk.W, padx=5)
         ttk.Entry(files_frame, textvariable=self.prompt_file, width=50).grid(row=2, column=1, padx=5)
         ttk.Button(files_frame, text="Browse...", command=self.browse_prompt).grid(row=2, column=2, padx=5)
-        
-        # Qwen API Settings
+
+        # OpenRouter API Settings
         api_frame = ttk.Frame(config_frame)
         api_frame.pack(fill=tk.X, pady=5)
 
@@ -1097,28 +1091,22 @@ class TTSPreprocessorGUI:
         self.show_hide_btn = ttk.Button(api_frame, text="👁", width=3, command=self.toggle_api_key_visibility)
         self.show_hide_btn.grid(row=0, column=2, padx=2)
 
-        ttk.Label(api_frame, text="Region:").grid(row=0, column=3, sticky=tk.W, padx=5)
-        region_combo = ttk.Combobox(api_frame, textvariable=self.region, width=12,
-                                     values=["singapore", "beijing"], state="readonly")
-        region_combo.grid(row=0, column=4, padx=5)
-        region_combo.bind('<<ComboboxSelected>>', lambda e: self.save_settings())
-
-        ttk.Label(api_frame, text="Model:").grid(row=0, column=5, sticky=tk.W, padx=5)
-        model_combo = ttk.Combobox(api_frame, textvariable=self.model_name, width=25,
+        ttk.Label(api_frame, text="Model:").grid(row=0, column=3, sticky=tk.W, padx=5)
+        model_combo = ttk.Combobox(api_frame, textvariable=self.model_name, width=35,
                                     values=[
-                                        "qwen-flash",           # Most economical - try first!
-                                        "qwen-plus",            # Balanced
-                                        "qwen-max",             # Most powerful
-                                        "qwen-max-latest",      # Latest version
-                                        "qwen-coder",           # Code-optimized
-                                        "qwq-plus",             # Reasoning
-                                        "qwen-turbo",           # Fast
-                                        "qwen-max-2025-01-25"   # Specific version
+                                        "qwen/qwen-2.5-72b-instruct",      # Qwen 2.5 72B (good balance)
+                                        "anthropic/claude-3.5-sonnet",     # Claude 3.5 Sonnet
+                                        "openai/gpt-4o",                   # GPT-4o
+                                        "openai/gpt-4o-mini",              # GPT-4o Mini (economical)
+                                        "google/gemini-2.0-flash-exp:free", # Gemini 2.0 Flash (free)
+                                        "meta-llama/llama-3.3-70b-instruct", # Llama 3.3 70B
+                                        "google/gemini-pro-1.5",           # Gemini Pro 1.5
+                                        "anthropic/claude-3-opus"          # Claude 3 Opus
                                     ])
-        model_combo.grid(row=0, column=6, padx=5)
+        model_combo.grid(row=0, column=4, padx=5)
         model_combo.bind('<FocusOut>', lambda e: self.save_settings())
 
-        ttk.Button(api_frame, text="Test Connection", command=self.test_connection).grid(row=0, column=7, padx=5)
+        ttk.Button(api_frame, text="Test Connection", command=self.test_connection).grid(row=0, column=5, padx=5)
         
         # Model Parameters
         params_frame = ttk.Frame(config_frame)
@@ -1287,7 +1275,6 @@ class TTSPreprocessorGUI:
     def save_settings(self):
         """Save all settings"""
         self.settings_mgr.settings.update({
-            "region": self.region.get(),
             "model_name": self.model_name.get(),
             "temperature": self.temperature.get(),
             "seed": self.seed.get(),
@@ -1305,15 +1292,14 @@ class TTSPreprocessorGUI:
         self.root.destroy()
 
     def test_connection(self):
-        """Test connection to Qwen API"""
+        """Test connection to OpenRouter API"""
         api_key = self.api_key.get().strip()
 
         if not api_key:
-            messagebox.showerror("Error", "Please enter your Qwen API key first!")
+            messagebox.showerror("Error", "Please enter your OpenRouter API key first!")
             return
 
-        self.log_message("Testing connection to Qwen API...", 'info')
-        self.log_message(f"Region: {self.region.get()}", 'info')
+        self.log_message("Testing connection to OpenRouter API...", 'info')
         self.log_message(f"Model: {self.model_name.get()}", 'info')
 
         try:
@@ -1331,15 +1317,15 @@ class TTSPreprocessorGUI:
                 max_tokens=10
             )
 
-            self.log_message("✓ Connection successful! Qwen API is ready.", 'success')
-            messagebox.showinfo("Connection Test", f"✓ Successfully connected to Qwen API!\n\nRegion: {self.region.get()}\nModel: {self.model_name.get()}")
+            self.log_message("✓ Connection successful! OpenRouter API is ready.", 'success')
+            messagebox.showinfo("Connection Test", f"✓ Successfully connected to OpenRouter API!\n\nModel: {self.model_name.get()}")
 
         except Exception as e:
             error_msg = str(e)
             # Mask API key in error message
             error_msg = SettingsManager.mask_api_key(error_msg, api_key)
             self.log_message(f"✗ Connection failed: {error_msg}", 'error')
-            messagebox.showerror("Connection Test", f"Failed to connect:\n{error_msg}\n\nPlease check:\n- API key is valid\n- Region is correct\n- Model name is correct")
+            messagebox.showerror("Connection Test", f"Failed to connect:\n{error_msg}\n\nPlease check:\n- API key is valid\n- Model name is correct")
 
     def preclean_input(self):
         """Pre-clean input file with detailed transformation logging"""
@@ -1993,7 +1979,7 @@ Progress:  0.0%"""
         return len(lines)
     
     def process_single_batch(self, text_batch, batch_num, context=""):
-        """Process a single batch with Qwen API"""
+        """Process a single batch with OpenRouter API"""
         try:
             # Get API key
             api_key = self.api_key.get().strip()
