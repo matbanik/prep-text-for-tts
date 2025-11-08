@@ -1706,7 +1706,7 @@ Progress:  0.0%"""
         """Stop processing"""
         if messagebox.askyesno("Stop Processing", "Are you sure you want to stop?\n\nProgress will be saved."):
             self.is_processing = False
-            self.log_message("⏹ Processing STOPPED by user", 'error')
+            self.log_message("⏹ [Request interrupted by user]", 'error')
             self.finish_processing()
     
     def finish_processing(self):
@@ -1731,6 +1731,157 @@ Progress:  0.0%"""
 
         last_sentences = sentences[-num_sentences:] if len(sentences) >= num_sentences else sentences
         return ' '.join(last_sentences) + '.' if last_sentences else ""
+
+    def extract_first_sentence(self, text):
+        """Extract first sentence from text"""
+        text = text.strip()
+        if not text:
+            return ""
+
+        # Split by sentence-ending punctuation
+        match = re.search(r'[.!?]+', text)
+        if match:
+            first_sentence = text[:match.end()].strip()
+            return first_sentence
+
+        # If no sentence ending found, take first line or 150 chars
+        lines = text.split('\n')
+        first_line = lines[0].strip()
+        if len(first_line) > 150:
+            return first_line[:150] + "..."
+        return first_line
+
+    def extract_last_sentence(self, text):
+        """Extract last sentence from text"""
+        text = text.strip()
+        if not text:
+            return ""
+
+        # Split by sentence-ending punctuation
+        sentences = re.split(r'[.!?]+', text)
+        sentences = [s.strip() for s in sentences if s.strip()]
+
+        # Filter out batch completion messages
+        sentences = [s for s in sentences if not re.search(r'Batch\s+\d+.*complete', s, re.IGNORECASE)]
+
+        if sentences:
+            last_sentence = sentences[-1]
+            # Add back the punctuation
+            if text.rstrip().endswith(('.', '!', '?')):
+                last_sentence += text.rstrip()[-1]
+            return last_sentence
+
+        return text[:150] if len(text) > 150 else text
+
+    def check_batch_alignment(self, input_text, output_text, batch_num):
+        """
+        Check alignment between input and output by comparing first and last sentences.
+
+        This detects:
+        - Missing content at start/end
+        - Hallucinated content
+        - Misalignment between batches
+        """
+        # Extract boundaries
+        input_first = self.extract_first_sentence(input_text)
+        input_last = self.extract_last_sentence(input_text)
+        output_first = self.extract_first_sentence(output_text)
+        output_last = self.extract_last_sentence(output_text)
+
+        # Log alignment check
+        self.log_message(f"   {'='*66}", 'info')
+        self.log_message(f"   🔍 BATCH ALIGNMENT CHECK", 'batch')
+        self.log_message(f"   {'='*66}", 'info')
+
+        # First sentence comparison
+        self.log_message(f"   📥 INPUT First sentence:", 'info')
+        self.log_message(f"      '{input_first}'", 'info')
+        self.log_message(f"   📤 OUTPUT First sentence:", 'info')
+        self.log_message(f"      '{output_first}'", 'info')
+
+        # Check if first sentences match (allowing for minor transformations)
+        first_match = self._fuzzy_sentence_match(input_first, output_first)
+        if first_match:
+            self.log_message(f"   ✓ First sentences aligned", 'success')
+        else:
+            self.log_message(f"   ⚠ WARNING: First sentences DO NOT match!", 'warning')
+            self._show_sentence_diff(input_first, output_first, "FIRST")
+
+        self.log_message(f"", 'info')
+
+        # Last sentence comparison
+        self.log_message(f"   📥 INPUT Last sentence:", 'info')
+        self.log_message(f"      '{input_last}'", 'info')
+        self.log_message(f"   📤 OUTPUT Last sentence:", 'info')
+        self.log_message(f"      '{output_last}'", 'info')
+
+        # Check if last sentences match
+        last_match = self._fuzzy_sentence_match(input_last, output_last)
+        if last_match:
+            self.log_message(f"   ✓ Last sentences aligned", 'success')
+        else:
+            self.log_message(f"   ⚠ WARNING: Last sentences DO NOT match!", 'warning')
+            self._show_sentence_diff(input_last, output_last, "LAST")
+
+        self.log_message(f"   {'='*66}", 'info')
+
+        # Return overall alignment status
+        return first_match and last_match
+
+    def _fuzzy_sentence_match(self, sent1, sent2, threshold=0.7):
+        """
+        Check if two sentences are similar enough (fuzzy match).
+
+        Allows for minor transformations like:
+        - Punctuation changes
+        - Case changes
+        - Minor word variations
+        """
+        if not sent1 or not sent2:
+            return False
+
+        # Normalize for comparison
+        norm1 = re.sub(r'[^\w\s]', '', sent1.lower())
+        norm2 = re.sub(r'[^\w\s]', '', sent2.lower())
+
+        # Simple word-based similarity
+        words1 = set(norm1.split())
+        words2 = set(norm2.split())
+
+        if not words1 or not words2:
+            return False
+
+        # Calculate Jaccard similarity
+        intersection = len(words1 & words2)
+        union = len(words1 | words2)
+        similarity = intersection / union if union > 0 else 0
+
+        return similarity >= threshold
+
+    def _show_sentence_diff(self, input_sent, output_sent, position):
+        """Show detailed diff between input and output sentences"""
+        self.log_message(f"   🔄 OUTPUT diff view ({position} sentence):", 'warning')
+
+        # Normalize and split into words
+        input_words = input_sent.split()
+        output_words = output_sent.split()
+
+        # Find added/removed/changed words
+        input_set = set(input_words)
+        output_set = set(output_words)
+
+        removed = input_set - output_set
+        added = output_set - input_set
+
+        if removed:
+            self.log_message(f"      ➖ Removed: {', '.join(removed)}", 'error')
+        if added:
+            self.log_message(f"      ➕ Added: {', '.join(added)}", 'warning')
+
+        # Show character-level similarity
+        import difflib
+        diff_ratio = difflib.SequenceMatcher(None, input_sent, output_sent).ratio()
+        self.log_message(f"      📊 Similarity: {diff_ratio*100:.1f}%", 'info')
     
     def find_paragraph_break(self, lines, max_lookback=50):
         """Find natural paragraph break"""
@@ -1898,6 +2049,16 @@ Remember: Only output the cleaned NEW text, not the context."""
                         self.log_message(f"   ✗ This indicates the LLM may be truncating or losing content", 'error')
                         self.log_message(f"   ⏹ Stopping processing to prevent data loss", 'error')
                         break
+
+                    # Check batch alignment (first/last sentence matching)
+                    self.log_message(f"", 'info')
+                    alignment_ok = self.check_batch_alignment(batch_text, cleaned, batch_num)
+                    self.log_message(f"", 'info')
+
+                    if not alignment_ok:
+                        self.log_message(f"   ⚠ ALIGNMENT WARNING: Input/Output boundaries don't match!", 'warning')
+                        self.log_message(f"   ⚠ This may indicate content loss or hallucination", 'warning')
+                        # Continue processing but warn user
 
                     # Update output preview
                     self.output_preview.delete(1.0, tk.END)
