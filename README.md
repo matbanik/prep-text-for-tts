@@ -20,8 +20,8 @@ A professional text preprocessing application for converting OCR output into cle
 - **Comprehensive Statistics**: Detailed logging of all transformations
 - **Edge Case Tracking**: Collects anomalies for continuous improvement
 
-![Screenshot](./TTS.jpg)
-![Screenshot](./TTS2.jpg)
+![Screenshot](./TTS.png)
+![Screenshot](./TTS2.png)
 
 ### 🎤 TTS-Specific Normalization
 - Punctuation normalization (!!!, ???, ---, ...)
