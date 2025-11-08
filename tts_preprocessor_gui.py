@@ -95,8 +95,8 @@ class SettingsManager:
         """Return default settings"""
         return {
             "api_key_encrypted": "",
-            "region": "singapore",  # singapore or beijing
-            "model_name": "qwen-plus",
+            "region": "singapore",  # singapore or beijing (free tier only in singapore!)
+            "model_name": "qwen-flash",  # Most economical for free tier
             "temperature": 0.2,
             "seed": 42,
             "batch_size": 500,
@@ -1100,8 +1100,17 @@ class TTSPreprocessorGUI:
         region_combo.bind('<<ComboboxSelected>>', lambda e: self.save_settings())
 
         ttk.Label(api_frame, text="Model:").grid(row=0, column=5, sticky=tk.W, padx=5)
-        model_combo = ttk.Combobox(api_frame, textvariable=self.model_name, width=20,
-                                    values=["qwen-plus", "qwen-max", "qwen-turbo", "qwen-max-2025-01-25"])
+        model_combo = ttk.Combobox(api_frame, textvariable=self.model_name, width=25,
+                                    values=[
+                                        "qwen-flash",           # Most economical - try first!
+                                        "qwen-plus",            # Balanced
+                                        "qwen-max",             # Most powerful
+                                        "qwen-max-latest",      # Latest version
+                                        "qwen-coder",           # Code-optimized
+                                        "qwq-plus",             # Reasoning
+                                        "qwen-turbo",           # Fast
+                                        "qwen-max-2025-01-25"   # Specific version
+                                    ])
         model_combo.grid(row=0, column=6, padx=5)
         model_combo.bind('<FocusOut>', lambda e: self.save_settings())
 
