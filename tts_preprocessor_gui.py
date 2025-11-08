@@ -23,141 +23,6 @@ from datetime import datetime
 import ftfy
 import spacy
 from multi_pass_processor import MultiPassOCRProcessor
-from cryptography.fernet import Fernet
-import base64
-import hashlib
-import os
-
-# ============================================================================
-# SETTINGS MANAGER - Encrypted API Key Storage
-# ============================================================================
-
-class SettingsManager:
-    """
-    Manages application settings with encrypted API key storage.
-
-    Security features:
-    - API keys encrypted at rest using Fernet (symmetric encryption)
-    - Encryption key derived from machine-specific identifier
-    - Settings file added to .gitignore to prevent accidental commits
-    - API keys masked in all log output
-    """
-
-    SETTINGS_FILE = "settings.json"
-    GITIGNORE_FILE = ".gitignore"
-
-    def __init__(self):
-        self.settings = self._load_settings()
-        self.encryption_key = self._get_encryption_key()
-        self._ensure_gitignore()
-
-    def _get_encryption_key(self):
-        """Generate encryption key from machine-specific identifier"""
-        # Use a machine-specific value + salt for key derivation
-        # This ensures keys are tied to the machine
-        machine_id = f"{os.getlogin()}-{Path.home()}".encode()
-        salt = b"tts-preprocessor-v1"  # Application-specific salt
-
-        # Derive 32-byte key using SHA-256
-        key_material = hashlib.sha256(machine_id + salt).digest()
-        # Fernet requires base64-encoded 32-byte key
-        return base64.urlsafe_b64encode(key_material)
-
-    def _encrypt_value(self, value):
-        """Encrypt a sensitive value"""
-        if not value:
-            return ""
-        fernet = Fernet(self.encryption_key)
-        return fernet.encrypt(value.encode()).decode()
-
-    def _decrypt_value(self, encrypted_value):
-        """Decrypt a sensitive value"""
-        if not encrypted_value:
-            return ""
-        try:
-            fernet = Fernet(self.encryption_key)
-            return fernet.decrypt(encrypted_value.encode()).decode()
-        except Exception:
-            return ""  # Return empty if decryption fails
-
-    def _load_settings(self):
-        """Load settings from JSON file"""
-        if Path(self.SETTINGS_FILE).exists():
-            try:
-                with open(self.SETTINGS_FILE, 'r') as f:
-                    return json.load(f)
-            except Exception as e:
-                print(f"Warning: Could not load settings: {e}")
-                return self._default_settings()
-        return self._default_settings()
-
-    def _default_settings(self):
-        """Return default settings"""
-        return {
-            "api_key_encrypted": "",
-            "region": "singapore",  # singapore or beijing (free tier only in singapore!)
-            "model_name": "qwen-flash",  # Most economical for free tier
-            "temperature": 0.2,
-            "seed": 42,
-            "batch_size": 500,
-            "max_tokens": 16000,
-            "last_input_file": "",
-            "last_output_file": "",
-            "last_prompt_file": ""
-        }
-
-    def save_settings(self):
-        """Save settings to JSON file"""
-        try:
-            with open(self.SETTINGS_FILE, 'w') as f:
-                json.dump(self.settings, f, indent=2)
-        except Exception as e:
-            print(f"Warning: Could not save settings: {e}")
-
-    def get_api_key(self):
-        """Get decrypted API key"""
-        encrypted = self.settings.get("api_key_encrypted", "")
-        return self._decrypt_value(encrypted)
-
-    def set_api_key(self, api_key):
-        """Set and encrypt API key"""
-        self.settings["api_key_encrypted"] = self._encrypt_value(api_key)
-        self.save_settings()
-
-    def get_base_url(self):
-        """Get Qwen API base URL based on region"""
-        region = self.settings.get("region", "singapore")
-        if region == "singapore":
-            return "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
-        else:  # beijing
-            return "https://dashscope.aliyuncs.com/compatible-mode/v1"
-
-    def _ensure_gitignore(self):
-        """Ensure settings.json is in .gitignore"""
-        gitignore_path = Path(self.GITIGNORE_FILE)
-        gitignore_content = ""
-
-        if gitignore_path.exists():
-            with open(gitignore_path, 'r') as f:
-                gitignore_content = f.read()
-
-        # Add settings.json if not already present
-        if self.SETTINGS_FILE not in gitignore_content:
-            with open(gitignore_path, 'a') as f:
-                if gitignore_content and not gitignore_content.endswith('\n'):
-                    f.write('\n')
-                f.write(f'\n# TTS Preprocessor settings (contains encrypted API key)\n')
-                f.write(f'{self.SETTINGS_FILE}\n')
-
-    @staticmethod
-    def mask_api_key(text, api_key):
-        """Mask API key in text for logging"""
-        if not api_key or len(api_key) < 8:
-            return text
-        # Show first 4 and last 4 characters, mask the rest
-        masked = api_key[:4] + '*' * (len(api_key) - 8) + api_key[-4:]
-        return text.replace(api_key, masked)
-
 
 # ============================================================================
 # PREPROCESSING MODULE - Best-Practices Text Cleaning for TTS
@@ -1331,15 +1196,12 @@ class TTSPreprocessorGUI:
                 max_tokens=10
             )
 
-            self.log_message("✓ Connection successful! Qwen API is ready.", 'success')
-            messagebox.showinfo("Connection Test", f"✓ Successfully connected to Qwen API!\n\nRegion: {self.region.get()}\nModel: {self.model_name.get()}")
+            self.log_message("✓ Connection successful! LM Studio is ready.", 'success')
+            messagebox.showinfo("Connection Test", "✓ Successfully connected to LM Studio!")
 
         except Exception as e:
-            error_msg = str(e)
-            # Mask API key in error message
-            error_msg = SettingsManager.mask_api_key(error_msg, api_key)
-            self.log_message(f"✗ Connection failed: {error_msg}", 'error')
-            messagebox.showerror("Connection Test", f"Failed to connect:\n{error_msg}\n\nPlease check:\n- API key is valid\n- Region is correct\n- Model name is correct")
+            self.log_message(f"✗ Connection failed: {str(e)}", 'error')
+            messagebox.showerror("Connection Test", f"Failed to connect:\n{str(e)}\n\nMake sure LM Studio Local Server is running!")
 
     def preclean_input(self):
         """Pre-clean input file with detailed transformation logging"""

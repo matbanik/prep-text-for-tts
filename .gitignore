@@ -28,6 +28,14 @@ venv/
 ENV/
 env/
 .venv
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
 
 # IDE
 .vscode/
@@ -49,3 +57,6 @@ OUTPUT.txt
 
 # spaCy models (downloaded separately)
 en_core_web_sm/
+# Project specific
+OUTPUT.txt
+*_PRECLEANED.txt

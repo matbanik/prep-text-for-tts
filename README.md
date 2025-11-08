@@ -1,189 +1,6 @@
 # TTS Text Preprocessor
 
-A professional GUI application for batch processing text with Qwen API (Alibaba Cloud Model Studio) to prepare content for high-quality text-to-speech conversion.
-
-## Features
-
-### 🔐 Security
-- **Encrypted API Key Storage**: API keys encrypted at rest using Fernet symmetric encryption
-- **Machine-Specific Encryption**: Encryption key derived from machine identifier
-- **API Key Masking**: All logs mask API keys (shows only first 4 + last 4 characters)
-- **Auto .gitignore**: Settings file automatically excluded from version control
-
-### 🌐 Qwen API Integration
-- Support for both **Singapore** and **Beijing** regions
-- Multiple model options including free tier models:
-  - `qwen-flash` - Most economical (recommended for free tier)
-  - `qwen-plus` - Balanced performance
-  - `qwen-max` - Most powerful
-  - `qwen-coder` - Code-optimized
-  - `qwq-plus` - Reasoning model
-- OpenAI-compatible API interface
-- Connection testing before processing
-
-### 🎯 AI-Powered Text Processing
-- **Context-Aware Transformations**:
-  - Homograph disambiguation (lead[leed] vs lead[led])
-  - Semantic number formatting (2024 → "twenty twenty-four")
-  - Context-aware abbreviations (Dr. = Doctor vs Drive)
-  - Sentence boundaries and punctuation
-  - Prosodic markers for natural speech
-  - Dialogue structure tracking
-
-### 🔍 Quality Validation
-- **LLM I/O Validation**:
-  - Compares characters sent vs received from LLM
-  - Stops processing if output >2x input (hallucination detection)
-  - Stops processing if output <50% input (truncation detection)
-  - Warns on suspicious size changes
-
-- **Batch Alignment Detection**:
-  - Compares first/last sentences between INPUT and OUTPUT
-  - Fuzzy matching (70% threshold) allows minor transformations
-  - Shows word-level diffs when misalignment detected
-  - Character-level similarity scoring
-
-- **Batch Continuity Checking**:
-  - Verifies smooth transitions between consecutive batches
-  - Compares batch N-1 OUTPUT last sentence vs batch N OUTPUT first sentence
-  - Detects duplicate content, gaps, or overlaps at boundaries
-  - Validates narrative flow consistency
-
-### 🛠️ Pre-processing Tools
-- **Multi-Pass OCR Cleaning** (87.09% accuracy):
-  - Fix merged words and spacing issues
-  - Remove page numbers and headers
-  - Normalize contractions and apostrophes
-  - Fix hyphenated line breaks
-  - Symbol and currency normalization
-  - ALL CAPS normalization
-  - Chapter marker standardization
-
-### 💾 Settings Management
-- Persistent settings stored in `settings.json`
-- Auto-save on window close and field changes
-- Remembers last used files
-- Region and model preferences
-- Processing parameters (temperature, seed, batch size, max tokens)
-
-### 📊 Real-Time Monitoring
-- Live progress tracking with progress bar
-- Detailed batch-by-batch logging with color coding
-- Statistics display (batches processed, elapsed time)
-- Input/output preview panels
-- Full output view tab
-
-## Installation
-
-### Prerequisites
-- Python 3.8 or higher
-- Qwen API key from [Alibaba Cloud Model Studio](https://modelstudio.console.alibabacloud.com)
-
-### Setup
-
-1. Clone the repository:
-```bash
-git clone https://github.com/matbanik/prep-text-for-tts.git
-cd prep-text-for-tts
-```
-
-2. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-3. (Optional) Download spaCy model for enhanced text processing:
-```bash
-python -m spacy download en_core_web_sm
-```
-
-## Qwen API Setup
-
-### Getting Your API Key
-
-1. Visit [Alibaba Cloud Model Studio](https://modelstudio.console.alibabacloud.com)
-2. Create an account or sign in
-3. Navigate to **Key Management** in the console
-4. Create a new API key
-5. Copy the key (you'll enter it in the application)
-
-### Free Tier Information
-
-**Available in Singapore region only** (not Beijing):
-- Each model has **1 million tokens** free quota
-- Valid for **90 days** from activation
-- All free tier models listed in the app
-
-**Recommended Free Tier Models:**
-- `qwen-flash` - Most economical, best for starting out
-- `qwen-plus` - Better quality if you need it
-- `qwen-max-latest` - Separate quota from qwen-max
-
-**Check Your Quota:**
-Visit the [Model Studio Console](https://modelstudio.console.alibabacloud.com) to view remaining tokens for each model.
-
-## Usage
-
-### Starting the Application
-
-```bash
-python tts_preprocessor_gui.py
-```
-
-### First-Time Setup
-
-1. **Enter API Key**:
-   - Paste your Qwen API key in the "API Key" field
-   - Click the 👁 button to show/hide key
-   - Key is automatically encrypted when you click away from the field
-
-2. **Select Region**:
-   - Choose **"singapore"** for free tier access
-   - Choose **"beijing"** if you're using that region
-
-3. **Select Model**:
-   - Start with **"qwen-flash"** (most economical)
-   - Try other models if needed
-
-4. **Test Connection**:
-   - Click "Test Connection" to verify your setup
-   - Should see "✓ Successfully connected to Qwen API!"
-
-### Processing Text
-
-1. **Select Input File**: Browse to your text file (e.g., OCR output)
-
-2. **Select Output File**: Choose where to save processed text
-
-3. **Select Prompt File**: Choose the TTS prompt (use `TTS_PROMPT_V2.txt`)
-
-4. **(Optional) Pre-clean**: Click "🔧 Pre-clean" to run deterministic OCR cleanup first
-
-5. **Configure Parameters**:
-   - **Temperature**: 0.2 (recommended for consistent output)
-   - **Seed**: 42 (for reproducibility)
-   - **Batch Size**: 500 lines per batch
-   - **Max Tokens**: 16000 (adjust based on model limits)
-
-6. **Start Processing**: Click "▶ Start Processing"
-
-7. **Monitor Progress**:
-   - Watch the progress bar and batch logs
-   - Check the "Current Batch Preview" tab for real-time comparison
-   - Review alignment and continuity checks in the logs
-
-8. **Review Output**:
-   - Check "Full Output" tab for complete processed text
-   - Review logs for any warnings or alignment issues
-   - Output saved to your selected file
-
-### Understanding the Logs
-
-**Batch Processing Logs:**
-```
-======================================================================
 📝 BATCH 1/10
-======================================================================
    Lines: 1 to 487
    Input:  487 lines, 23456 chars
    Using context from Batch 0
@@ -343,3 +160,283 @@ For issues or questions:
 ---
 
 **Note**: This tool uses AI language models which may produce unexpected results. Always review the output before using it for production TTS systems.
+[![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+
+A professional text preprocessing application for converting OCR output into clean, TTS-ready text. Features a production-ready multi-pass OCR processor achieving **87.09% accuracy** and comprehensive TTS normalization.
+
+![TTS Text Preprocessor GUI](docs/gui_screenshot.png)
+*Professional interface with real-time processing and detailed transformation logging*
+
+## ✨ Features
+
+### 🎯 Production-Ready OCR Processing (87.09% Accuracy)
+- **5-Stage Multi-Pass Pipeline**:
+  - Stage 1: Semantic Cleaning (ftfy, page headers, whitespace)
+  - Stage 2: Deterministic Cleaning (apostrophes, word fragments, OCR errors)
+  - Stage 3: Sentence Reconstruction (paragraph merging)
+  - Stage 4: Edge Case Collection
+  - Stage 5: Edge Case Handling
+- **Comprehensive Statistics**: Detailed logging of all transformations
+- **Edge Case Tracking**: Collects anomalies for continuous improvement
+
+### 🎤 TTS-Specific Normalization
+- Punctuation normalization (!!!, ???, ---, ...)
+- Symbol conversion (™, ©, &, @, #)
+- Number expansion (1st → first, 1990s)
+- Currency formatting ($100 → 100 dollars)
+- ALL CAPS normalization (preserve acronyms)
+- Chapter marker standardization
+- URL and email removal
+- Smart text chunking (spaCy + Deepgram hybrid approach)
+
+### 🖥️ Professional GUI
+- Real-time processing with progress tracking
+- Detailed transformation logging with before/after examples
+- File-based batch processing
+- Integration with LM Studio for AI-powered refinement
+- Pause/resume/stop controls
+- Statistics dashboard
+
+## 🚀 Quick Start
+
+### Windows
+
+Simply run the included launcher script:
+
+```powershell
+.\run.ps1
+```
+
+### Linux / macOS
+
+Simply run the included launcher script:
+
+```bash
+./run.sh
+```
+
+The script will automatically:
+- ✓ Check for Python installation
+- ✓ Verify pip is available
+- ✓ Install required packages (openai, ftfy, spacy)
+- ✓ Download spaCy language model
+- ✓ Launch the GUI application
+
+### Manual Installation
+
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/yourusername/prep-text-for-tts.git
+   cd prep-text-for-tts
+   ```
+
+2. **Install Python dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   python -m spacy download en_core_web_sm
+   ```
+
+3. **Launch the application**:
+   ```bash
+   python tts_preprocessor_gui.py
+   ```
+
+## 📋 Requirements
+
+- **Python**: 3.8 or higher
+- **Operating System**: Windows, macOS, or Linux
+- **Dependencies**:
+  - `openai>=1.0.0` (for LM Studio integration)
+  - `ftfy>=6.0.0` (for Unicode/mojibake fixing)
+  - `spacy>=3.0.0` (for NLP and sentence segmentation)
+  - `tkinter` (usually included with Python)
+
+## 📖 Usage
+
+### Basic Workflow
+
+1. **Select Input File**: Choose your OCR text file (.txt)
+2. **Pre-Clean Text**: Click "Pre-Clean Input" to run the multi-pass OCR processor
+3. **Review Statistics**: Check transformation details in the log window
+4. **Optional AI Refinement**: Configure LM Studio endpoint and process with AI
+5. **Save Output**: Pre-cleaned file is automatically saved with `_precleaned` suffix
+
+### Processing Pipeline
+
+```
+Raw OCR Text
+    ↓
+[Multi-Pass OCR Processor - 87.09% Accuracy]
+    ├─ Stage 1: Semantic Cleaning
+    ├─ Stage 2: Deterministic Cleaning
+    ├─ Stage 3: Sentence Reconstruction
+    ├─ Stage 4: Edge Case Collection
+    └─ Stage 5: Edge Case Handling
+    ↓
+[TTS Normalization - 10 Steps]
+    ├─ Punctuation normalization
+    ├─ Symbol conversion
+    ├─ Number expansion
+    ├─ Currency formatting
+    ├─ ALL CAPS normalization
+    ├─ Chapter markers
+    ├─ URL/email removal
+    ├─ Page number removal
+    ├─ Whitespace normalization
+    └─ Smart chunking for TTS
+    ↓
+Clean TTS-Ready Text
+```
+
+## 🏗️ Architecture
+
+### Project Structure
+
+```
+prep-text-for-tts/
+├── tts_preprocessor_gui.py      # Main GUI application
+├── multi_pass_processor.py      # OCR processor (87.09% accuracy)
+├── run.ps1                       # Windows launcher script
+├── run.sh                        # Linux/macOS launcher script
+├── requirements.txt              # Python dependencies
+├── requirements_ocr.txt          # Optional OCR model dependencies
+│
+├── test/                         # Test suite
+│   ├── test_multi_pass_processor.py
+│   ├── test_integration.py
+│   ├── test_gui_refactor.py
+│   └── analyze_differences.py
+│
+├── docs/                         # Documentation & test data
+│   ├── GUI_USER_GUIDE.md
+│   ├── ocr_text_processing_pseudologic.md
+│   └── INPUT.txt / OUTPUT.txt (test data)
+│
+└── archive/                      # Historical code (reference only)
+```
+
+### Multi-Pass OCR Processor
+
+The `MultiPassOCRProcessor` class implements a 5-stage pipeline:
+
+```python
+from multi_pass_processor import MultiPassOCRProcessor
+
+processor = MultiPassOCRProcessor()
+cleaned_text, state = processor.process(raw_ocr_text)
+
+# Access statistics
+print(f"Headers removed: {state.stats['headers_removed']}")
+print(f"Apostrophes fixed: {state.stats['apostrophes_fixed']}")
+print(f"Lines merged: {state.stats['lines_merged']}")
+print(f"Edge cases: {len(state.edge_cases)}")
+```
+
+**Key Metrics** (tested on production OCR data):
+- Overall Accuracy: **87.09%**
+- Character-level: **99.75%**
+- Word-level: **92.75%**
+- Line-level: **78.82%**
+
+## 🧪 Testing
+
+Run the test suite:
+
+```bash
+# Test multi-pass processor
+python test/test_integration.py
+
+# Test GUI integration
+python test/test_gui_refactor.py
+
+# Analyze differences in detail
+python test/analyze_differences.py
+```
+
+## 📊 Performance
+
+The multi-pass processor has been extensively tested on real OCR output:
+
+| Metric | Score | Details |
+|--------|-------|---------|
+| **Overall Accuracy** | 87.09% | Production-ready (exceeds 85% threshold) |
+| **Character-level** | 99.75% | Near-perfect character accuracy |
+| **Word-level** | 92.75% | Excellent word preservation |
+| **Line-level** | 78.82% | Good structural accuracy |
+
+**Processing Speed**: ~1000 lines/second on modern hardware
+
+## 🔧 Configuration
+
+### LM Studio Integration
+
+1. Install and run [LM Studio](https://lmstudio.ai/)
+2. Load a text generation model
+3. Start the local server (default: http://localhost:1234)
+4. In the GUI:
+   - Enter server URL
+   - Click "Test Connection"
+   - Configure batch settings
+   - Process with AI refinement
+
+### Customization
+
+Edit `multi_pass_processor.py` to customize:
+- Page header patterns
+- OCR error corrections
+- Word fragment detection rules
+- Edge case detection thresholds
+
+## 📚 Documentation
+
+- [GUI User Guide](docs/GUI_USER_GUIDE.md) - Detailed usage instructions
+- [OCR Processing Specification](docs/ocr_text_processing_pseudologic.md) - Technical specification
+- [LM Studio Setup Guide](docs/RTX_5080_LM_STUDIO_GUIDE.md) - GPU optimization guide
+- [Test Framework](test/README.md) - Test documentation
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+## 🐛 Bug Reports
+
+Found a bug? Please open an issue with:
+- Python version
+- Operating system
+- Sample input text (if applicable)
+- Expected vs actual behavior
+- Error messages/logs
+
+## 📝 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- **ftfy** - Text fixing library by Robyn Speer
+- **spaCy** - Industrial-strength NLP by Explosion AI
+- **epub2tts** - Audiobook generation inspiration
+- **Deepgram** - TTS optimization best practices
+- **LM Studio** - Local LLM inference platform
+
+## 📧 Contact
+
+For questions or support, please open an issue on GitHub.
+
+---
+
+<div align="center">
+
+**[⬆ Back to Top](#tts-text-preprocessor)**
+
+Made with ❤️ for the TTS community
+
+</div>

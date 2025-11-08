@@ -1,0 +1,21 @@
+# OCR Processing Requirements
+# Install with: pip install -r requirements_ocr.txt
+
+# Core deep learning
+torch>=2.0.1
+torchvision>=0.15.2
+transformers>=4.37.2
+accelerate>=0.28.0
+
+# Image processing
+pillow>=10.0.0
+
+# PDF handling
+pymupdf>=1.23.0
+
+# Model-specific requirements
+qwen-vl-utils>=0.0.1  # For Qwen2-VL models
+tiktoken>=0.6.0       # For GOT-OCR
+
+# Optional but recommended
+sentencepiece>=0.1.99  # For some tokenizers
