@@ -1092,14 +1092,15 @@ class TTSPreprocessorGUI:
         self.show_hide_btn.grid(row=0, column=2, padx=2)
 
         ttk.Label(api_frame, text="Model:").grid(row=0, column=3, sticky=tk.W, padx=5)
-        model_combo = ttk.Combobox(api_frame, textvariable=self.model_name, width=35,
+        model_combo = ttk.Combobox(api_frame, textvariable=self.model_name, width=40,
                                     values=[
-                                        "qwen/qwen-2.5-72b-instruct",      # Qwen 2.5 72B (good balance)
+                                        "deepseek/deepseek-chat",          # DeepSeek Chat (economical)
+                                        "qwen/qwen-2.5-72b-instruct",      # Qwen 2.5 72B
+                                        "google/gemini-2.0-flash-exp:free", # Gemini 2.0 Flash (free)
+                                        "openai/gpt-4o-mini",              # GPT-4o Mini
+                                        "meta-llama/llama-3.3-70b-instruct", # Llama 3.3 70B
                                         "anthropic/claude-3.5-sonnet",     # Claude 3.5 Sonnet
                                         "openai/gpt-4o",                   # GPT-4o
-                                        "openai/gpt-4o-mini",              # GPT-4o Mini (economical)
-                                        "google/gemini-2.0-flash-exp:free", # Gemini 2.0 Flash (free)
-                                        "meta-llama/llama-3.3-70b-instruct", # Llama 3.3 70B
                                         "google/gemini-pro-1.5",           # Gemini Pro 1.5
                                         "anthropic/claude-3-opus"          # Claude 3 Opus
                                     ])
