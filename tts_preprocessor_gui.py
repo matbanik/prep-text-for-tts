@@ -2070,7 +2070,8 @@ Remember: Only output the cleaned NEW text, not the context."""
             batch_size = self.batch_size.get()
             i = 0
             batch_num = 1
-            
+            retry_count = 0  # Track retries for low response errors
+
             while i < total_lines and self.is_processing:
                 # Wait if paused
                 while self.is_paused and self.is_processing:
@@ -2149,8 +2150,20 @@ Remember: Only output the cleaned NEW text, not the context."""
                         self.log_message(f"   ✗ CRITICAL ERROR: LLM response is {llm_change:.1f}% smaller than input!", 'error')
                         self.log_message(f"   ✗ Expected ~{llm_input_size} chars, received {llm_output_size} chars", 'error')
                         self.log_message(f"   ✗ This indicates the LLM may be truncating or losing content", 'error')
-                        self.log_message(f"   ⏹ Stopping processing to prevent data loss", 'error')
-                        break
+
+                        if retry_count == 0:
+                            # First occurrence - retry the batch
+                            retry_count += 1
+                            self.log_message(f"   🔄 Retrying batch {batch_num} (attempt {retry_count + 1}/2)...", 'warning')
+                            continue  # Retry same batch without advancing
+                        else:
+                            # Second occurrence - pause for manual intervention
+                            self.log_message(f"   ⏸ PAUSING processing after retry failed", 'error')
+                            self.log_message(f"   ⏸ Please review and manually resume when ready", 'warning')
+                            retry_count = 0  # Reset for next batch
+                            self.is_paused = True
+                            self.pause_btn.config(text="▶ Resume")
+                            continue  # Pause and wait for user to resume
 
                     # Check batch continuity (for batch 2+)
                     if batch_num > 1:
@@ -2206,10 +2219,13 @@ Remember: Only output the cleaned NEW text, not the context."""
                     # Show context (filtered)
                     if next_context:
                         self.log_message(f"   Context: '{next_context[:60]}...'", 'info')
+
+                    # Reset retry counter on successful batch
+                    retry_count = 0
                 else:
                     self.log_message(f"   ✗ Batch FAILED - stopping", 'error')
                     break
-                
+
                 # Update progress
                 self.current_batch = batch_num
                 progress = (batch_num / self.total_batches) * 100
