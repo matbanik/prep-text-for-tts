@@ -1168,6 +1168,7 @@ class TTSPreprocessorGUI:
         self.total_batches = 0
         self.start_time = None
         self.previous_context = ""
+        self.test_mode = tk.BooleanVar(value=False)  # Mock AI for testing
 
         # Batch continuity tracking
         self.previous_input_last_sentence = ""
@@ -1305,29 +1306,35 @@ class TTSPreprocessorGUI:
         self.stop_btn = ttk.Button(button_frame, text="[STOP] Stop",
                                    command=self.stop_processing, state=tk.DISABLED)
         self.stop_btn.pack(fill=tk.X, pady=2)
-        
+
+        # Test mode checkbox
+        test_mode_check = ttk.Checkbutton(button_frame, text="Test Mode (Echo Input)",
+                                          variable=self.test_mode)
+        test_mode_check.pack(fill=tk.X, pady=2)
+
         # ==== BOTTOM SECTION: Preview & Logs (Tabbed) ====
-        notebook = ttk.Notebook(self.root)
-        notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-        
+        self.notebook = ttk.Notebook(self.root)
+        self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
         # Tab 1: Console Log
-        log_frame = ttk.Frame(notebook)
-        notebook.add(log_frame, text="[LOG] Console Log")
-        
-        self.log_text = scrolledtext.ScrolledText(log_frame, wrap=tk.WORD, 
+        log_frame = ttk.Frame(self.notebook)
+        self.notebook.add(log_frame, text="[LOG] Console Log")
+
+        self.log_text = scrolledtext.ScrolledText(log_frame, wrap=tk.WORD,
                                                    font=('Courier', 9), bg='#1e1e1e', fg='#d4d4d4')
         self.log_text.pack(fill=tk.BOTH, expand=True)
-        
+
         # Configure log text tags for colors
         self.log_text.tag_config('info', foreground='#4ec9b0')
         self.log_text.tag_config('success', foreground='#4fc1ff')
         self.log_text.tag_config('warning', foreground='#dcdcaa')
         self.log_text.tag_config('error', foreground='#f48771')
         self.log_text.tag_config('batch', foreground='#c586c0')
-        
+
         # Tab 2: Diff Viewer (Batch Preview with line numbers)
-        preview_frame = ttk.Frame(notebook)
-        notebook.add(preview_frame, text="[VIEW] Diff Viewer")
+        preview_frame = ttk.Frame(self.notebook)
+        self.notebook.add(preview_frame, text="[VIEW] Diff Viewer")
+        self.diff_viewer_tab_index = 1  # Store tab index for updating title
 
         preview_paned = ttk.PanedWindow(preview_frame, orient=tk.HORIZONTAL)
         preview_paned.pack(fill=tk.BOTH, expand=True)
@@ -1350,8 +1357,8 @@ class TTSPreprocessorGUI:
         self._setup_synchronized_scrolling()
 
         # Tab 3: Full Output View with line numbers and Find function
-        output_frame = ttk.Frame(notebook)
-        notebook.add(output_frame, text="[DOC] Full Output")
+        output_frame = ttk.Frame(self.notebook)
+        self.notebook.add(output_frame, text="[DOC] Full Output")
 
         # Text area with line numbers
         self.full_output_text = TextWithLineNumbers(output_frame, wrap=tk.WORD,
@@ -2269,8 +2276,18 @@ Progress:  0.0%"""
         return len(lines)
     
     def process_single_batch(self, text_batch, batch_num, context=""):
-        """Process a single batch with Qwen API"""
+        """Process a single batch with Qwen API or mock mode"""
         try:
+            # TEST MODE: Echo input as output for testing alignment
+            if self.test_mode.get():
+                import time
+                time.sleep(0.5)  # Simulate processing delay
+                cleaned_text = text_batch  # Echo the exact input
+                next_context = self.extract_last_sentences(cleaned_text, 3)
+                # Return: (cleaned_text, next_context, input_size, output_size)
+                return cleaned_text, next_context, len(text_batch), len(cleaned_text)
+
+            # NORMAL MODE: Process with AI
             # Get API key
             api_key = self.api_key.get().strip()
             if not api_key:
@@ -2379,9 +2396,16 @@ Remember: Only output the cleaned NEW text, not the context."""
                 input_line_count = len(batch_lines)
                 input_char_count = len(batch_text)
 
-                # Update preview
+                # Update Diff Viewer tab title with batch number
+                self.notebook.tab(self.diff_viewer_tab_index, text=f"[VIEW] Diff Viewer - Batch {batch_num}/{self.total_batches}")
+
+                # Update input preview with FULL batch text (no 2000 char limit)
                 self.input_preview.delete(1.0, tk.END)
-                self.input_preview.insert(1.0, batch_text[:2000] + "..." if len(batch_text) > 2000 else batch_text)
+                self.input_preview.insert(1.0, batch_text)
+
+                # Clear output preview (will be filled after processing)
+                self.output_preview.delete(1.0, tk.END)
+                self.output_preview.insert(1.0, "[Processing...]")
 
                 # Log batch info
                 self.log_message(f"\n{'='*70}", 'batch')
@@ -2510,9 +2534,9 @@ Remember: Only output the cleaned NEW text, not the context."""
                     self.previous_input_last_sentence = self.extract_last_sentence(batch_text)
                     self.previous_output_last_sentence = self.extract_last_sentence(cleaned)
 
-                    # Update output preview
+                    # Update output preview with FULL cleaned text (no 2000 char limit)
                     self.output_preview.delete(1.0, tk.END)
-                    self.output_preview.insert(1.0, cleaned[:2000] + "..." if len(cleaned) > 2000 else cleaned)
+                    self.output_preview.insert(1.0, cleaned)
 
                     # Append to output file
                     with open(self.output_file.get(), 'a', encoding='utf-8') as f:
