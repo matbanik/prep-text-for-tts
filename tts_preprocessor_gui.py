@@ -1199,7 +1199,7 @@ class TTSPreprocessorGUI:
         ttk.Label(files_frame, text="Input File:").grid(row=0, column=0, sticky=tk.W, padx=5)
         ttk.Entry(files_frame, textvariable=self.input_file, width=50).grid(row=0, column=1, padx=5)
         ttk.Button(files_frame, text="Browse...", command=self.browse_input).grid(row=0, column=2, padx=5)
-        ttk.Button(files_frame, text="🔧 Pre-clean", command=self.preclean_input).grid(row=0, column=3, padx=5)
+        ttk.Button(files_frame, text="[TOOL] Pre-clean", command=self.preclean_input).grid(row=0, column=3, padx=5)
         
         ttk.Label(files_frame, text="Output File:").grid(row=1, column=0, sticky=tk.W, padx=5)
         ttk.Entry(files_frame, textvariable=self.output_file, width=50).grid(row=1, column=1, padx=5)
@@ -1218,7 +1218,7 @@ class TTSPreprocessorGUI:
         self.api_key_entry.grid(row=0, column=1, padx=5)
         self.api_key_entry.bind('<FocusOut>', lambda e: self.save_api_key())
 
-        self.show_hide_btn = ttk.Button(api_frame, text="👁", width=3, command=self.toggle_api_key_visibility)
+        self.show_hide_btn = ttk.Button(api_frame, text="[VIEW]", width=3, command=self.toggle_api_key_visibility)
         self.show_hide_btn.grid(row=0, column=2, padx=2)
 
         ttk.Label(api_frame, text="Region:").grid(row=0, column=3, sticky=tk.W, padx=5)
@@ -1294,15 +1294,15 @@ class TTSPreprocessorGUI:
         button_frame = ttk.LabelFrame(control_frame, text="Controls", padding=10)
         button_frame.pack(side=tk.LEFT, fill=tk.BOTH, padx=5)
 
-        self.start_btn = ttk.Button(button_frame, text="▶ Start Processing",
+        self.start_btn = ttk.Button(button_frame, text="[RESUME] Start Processing",
                                     command=self.start_processing, style='Accent.TButton')
         self.start_btn.pack(fill=tk.X, pady=2)
 
-        self.pause_btn = ttk.Button(button_frame, text="⏸ Pause",
+        self.pause_btn = ttk.Button(button_frame, text="[PAUSE] Pause",
                                     command=self.pause_processing, state=tk.DISABLED)
         self.pause_btn.pack(fill=tk.X, pady=2)
 
-        self.stop_btn = ttk.Button(button_frame, text="⏹ Stop",
+        self.stop_btn = ttk.Button(button_frame, text="[STOP] Stop",
                                    command=self.stop_processing, state=tk.DISABLED)
         self.stop_btn.pack(fill=tk.X, pady=2)
         
@@ -1312,7 +1312,7 @@ class TTSPreprocessorGUI:
         
         # Tab 1: Console Log
         log_frame = ttk.Frame(notebook)
-        notebook.add(log_frame, text="📋 Console Log")
+        notebook.add(log_frame, text="[LOG] Console Log")
         
         self.log_text = scrolledtext.ScrolledText(log_frame, wrap=tk.WORD, 
                                                    font=('Courier', 9), bg='#1e1e1e', fg='#d4d4d4')
@@ -1327,7 +1327,7 @@ class TTSPreprocessorGUI:
         
         # Tab 2: Diff Viewer (Batch Preview with line numbers)
         preview_frame = ttk.Frame(notebook)
-        notebook.add(preview_frame, text="👁 Diff Viewer")
+        notebook.add(preview_frame, text="[VIEW] Diff Viewer")
 
         preview_paned = ttk.PanedWindow(preview_frame, orient=tk.HORIZONTAL)
         preview_paned.pack(fill=tk.BOTH, expand=True)
@@ -1351,7 +1351,7 @@ class TTSPreprocessorGUI:
 
         # Tab 3: Full Output View with line numbers and Find function
         output_frame = ttk.Frame(notebook)
-        notebook.add(output_frame, text="📄 Full Output")
+        notebook.add(output_frame, text="[DOC] Full Output")
 
         # Text area with line numbers
         self.full_output_text = TextWithLineNumbers(output_frame, wrap=tk.WORD,
@@ -1384,7 +1384,7 @@ class TTSPreprocessorGUI:
         self.status_bar = ttk.Label(self.root, text="Ready", relief=tk.SUNKEN, anchor=tk.W)
         self.status_bar.pack(fill=tk.X, side=tk.BOTTOM)
         
-        self.log_message("✓ GUI initialized. Configure settings and load files to begin.", 'success')
+        self.log_message("[OK] GUI initialized. Configure settings and load files to begin.", 'success')
 
     def _setup_synchronized_scrolling(self):
         """Setup synchronized scrolling between diff viewer panels"""
@@ -1557,7 +1557,7 @@ class TTSPreprocessorGUI:
         api_key = self.api_key.get().strip()
         if api_key:
             self.settings_mgr.set_api_key(api_key)
-            self.log_message("✓ API key saved (encrypted)", 'success')
+            self.log_message("[OK] API key saved (encrypted)", 'success')
 
     def save_settings(self):
         """Save all settings"""
@@ -1607,14 +1607,14 @@ class TTSPreprocessorGUI:
                 max_tokens=10
             )
 
-            self.log_message("✓ Connection successful! Qwen API is ready.", 'success')
-            messagebox.showinfo("Connection Test", f"✓ Successfully connected to Qwen API!\n\nRegion: {self.region.get()}\nModel: {self.model_name.get()}")
+            self.log_message("[OK] Connection successful! Qwen API is ready.", 'success')
+            messagebox.showinfo("Connection Test", f"[OK] Successfully connected to Qwen API!\n\nRegion: {self.region.get()}\nModel: {self.model_name.get()}")
 
         except Exception as e:
             error_msg = str(e)
             # Mask API key in error message
             error_msg = SettingsManager.mask_api_key(error_msg, api_key)
-            self.log_message(f"✗ Connection failed: {error_msg}", 'error')
+            self.log_message(f"[X] Connection failed: {error_msg}", 'error')
             messagebox.showerror("Connection Test", f"Failed to connect:\n{error_msg}\n\nPlease check:\n- API key is valid\n- Region is correct\n- Model name is correct")
 
     def preclean_input(self):
@@ -1625,12 +1625,12 @@ class TTSPreprocessorGUI:
 
         try:
             self.log_message("="*70, 'info')
-            self.log_message("🔧 STARTING DETERMINISTIC PRE-CLEANING WITH DETAILED LOGGING", 'batch')
+            self.log_message("[TOOL] STARTING DETERMINISTIC PRE-CLEANING WITH DETAILED LOGGING", 'batch')
             self.log_message("="*70, 'info')
 
             # Read input file
             input_path = Path(self.input_file.get())
-            self.log_message(f"📖 Reading: {input_path.name}", 'info')
+            self.log_message(f"[READ] Reading: {input_path.name}", 'info')
 
             with open(input_path, 'r', encoding='utf-8') as f:
                 original_text = f.read()
@@ -1668,7 +1668,7 @@ class TTSPreprocessorGUI:
             # ========================================================================
             # PART 1: MULTI-PASS OCR CLEANING (87.09% accuracy)
             # ========================================================================
-            self.log_message("🔹 PART 1: MULTI-PASS OCR CLEANING (5 Stages)", 'batch')
+            self.log_message("[*] PART 1: MULTI-PASS OCR CLEANING (5 Stages)", 'batch')
             self.log_message("   Production-ready processor: 87.09% accuracy", 'success')
             self.log_message("", 'info')
 
@@ -1679,19 +1679,19 @@ class TTSPreprocessorGUI:
             self.log_message(f"{'='*70}", 'batch')
             self.log_message(f"MULTI-PASS OCR PROCESSING RESULTS", 'batch')
             self.log_message(f"{'='*70}", 'batch')
-            self.log_message(f"   ✓ Stage 1: Semantic Cleaning", 'success')
+            self.log_message(f"   [OK] Stage 1: Semantic Cleaning", 'success')
             self.log_message(f"      - Page headers removed: {ocr_state.stats.get('headers_removed', 0)}", 'info')
             self.log_message(f"      - Whitespace normalized: {ocr_state.stats.get('whitespace_normalized', 0)}", 'info')
-            self.log_message(f"   ✓ Stage 2: Deterministic Cleaning", 'success')
+            self.log_message(f"   [OK] Stage 2: Deterministic Cleaning", 'success')
             self.log_message(f"      - OCR artifacts fixed: {ocr_state.stats.get('ocr_artifacts_fixed', 0)}", 'info')
             self.log_message(f"      - Apostrophes fixed: {ocr_state.stats.get('apostrophes_fixed', 0)}", 'info')
             self.log_message(f"      - Word fragments fixed: {ocr_state.stats.get('fragments_fixed', 0)}", 'info')
-            self.log_message(f"   ✓ Stage 3: Sentence Reconstruction", 'success')
+            self.log_message(f"   [OK] Stage 3: Sentence Reconstruction", 'success')
             self.log_message(f"      - Lines merged: {ocr_state.stats.get('lines_merged', 0)}", 'info')
             self.log_message(f"      - Paragraphs formed: {ocr_state.stats.get('paragraphs_formed', 0)}", 'info')
-            self.log_message(f"   ✓ Stage 4: Edge Case Collection", 'success')
+            self.log_message(f"   [OK] Stage 4: Edge Case Collection", 'success')
             self.log_message(f"      - Edge cases detected: {len(ocr_state.edge_cases)}", 'info')
-            self.log_message(f"   ✓ Stage 5: Edge Case Handling", 'success')
+            self.log_message(f"   [OK] Stage 5: Edge Case Handling", 'success')
             self.log_message(f"      - Edge cases logged: {ocr_state.stats.get('edge_cases_handled', 0)}", 'info')
 
             current_text = log_transformation("Multi-Pass OCR Cleaning (5 stages)", before, current_text, show_examples=True)
@@ -1699,65 +1699,65 @@ class TTSPreprocessorGUI:
             # ========================================================================
             # PART 2: TTS-SPECIFIC NORMALIZATION (10 Steps)
             # ========================================================================
-            self.log_message("🔹 PART 2: TTS-SPECIFIC NORMALIZATION (10 Steps)", 'batch')
+            self.log_message("[*] PART 2: TTS-SPECIFIC NORMALIZATION (10 Steps)", 'batch')
             self.log_message("", 'info')
 
             # Step 1 of TTS Normalization: Normalize punctuation
-            self.log_message("🔹 TTS Step 1: Normalizing punctuation (???, !!!, ---, ...)", 'batch')
+            self.log_message("[*] TTS Step 1: Normalizing punctuation (???, !!!, ---, ...)", 'batch')
             before = current_text
             current_text = TextPreprocessor.normalize_punctuation(current_text)
             current_text = log_transformation("Normalize Punctuation", before, current_text)
 
             # Step 2 of TTS Normalization: Normalize symbols
-            self.log_message("🔹 TTS Step 2: Normalizing symbols (™, ©, &, @, #)", 'batch')
+            self.log_message("[*] TTS Step 2: Normalizing symbols (™, ©, &, @, #)", 'batch')
             before = current_text
             current_text = TextPreprocessor.normalize_symbols(current_text)
             current_text = log_transformation("Normalize Symbols", before, current_text)
 
             # Step 3 of TTS Normalization: Normalize numbers
-            self.log_message("🔹 TTS Step 3: Normalizing numbers (1st→first, 1990s)", 'batch')
+            self.log_message("[*] TTS Step 3: Normalizing numbers (1st→first, 1990s)", 'batch')
             before = current_text
             current_text = TextPreprocessor.normalize_numbers(current_text)
             current_text = log_transformation("Normalize Numbers", before, current_text)
 
             # Step 4 of TTS Normalization: Normalize currency
-            self.log_message("🔹 TTS Step 4: Normalizing currency ($100→100 dollars)", 'batch')
+            self.log_message("[*] TTS Step 4: Normalizing currency ($100→100 dollars)", 'batch')
             before = current_text
             current_text = TextPreprocessor.normalize_currency(current_text)
             current_text = log_transformation("Normalize Currency", before, current_text)
 
             # Step 5 of TTS Normalization: Normalize ALL CAPS
-            self.log_message("🔹 TTS Step 5: Normalizing ALL CAPS (preserve acronyms)", 'batch')
+            self.log_message("[*] TTS Step 5: Normalizing ALL CAPS (preserve acronyms)", 'batch')
             before = current_text
             current_text = TextPreprocessor.normalize_all_caps(current_text)
             current_text = log_transformation("Normalize ALL CAPS", before, current_text)
 
             # Step 6 of TTS Normalization: Normalize chapter markers
-            self.log_message("🔹 TTS Step 6: Normalizing chapter markers (Chapter IV→Chapter 4)", 'batch')
+            self.log_message("[*] TTS Step 6: Normalizing chapter markers (Chapter IV→Chapter 4)", 'batch')
             before = current_text
             current_text = TextPreprocessor.normalize_chapter_markers(current_text)
             current_text = log_transformation("Normalize Chapter Markers", before, current_text)
 
             # Step 7 of TTS Normalization: Remove URLs and emails
-            self.log_message("🔹 TTS Step 7: Removing URLs and emails", 'batch')
+            self.log_message("[*] TTS Step 7: Removing URLs and emails", 'batch')
             before = current_text
             current_text = TextPreprocessor.remove_urls_emails(current_text)
             current_text = log_transformation("Remove URLs/Emails", before, current_text)
 
             # Step 8 of TTS Normalization: Remove page numbers
-            self.log_message("🔹 TTS Step 8: Removing remaining page numbers", 'batch')
+            self.log_message("[*] TTS Step 8: Removing remaining page numbers", 'batch')
             before = current_text
             current_text = TextPreprocessor.remove_page_numbers(current_text)
             current_text = log_transformation("Remove Page Numbers", before, current_text)
 
             # Step 9 of TTS Normalization: Normalize whitespace
-            self.log_message("🔹 TTS Step 9: Normalizing whitespace", 'batch')
+            self.log_message("[*] TTS Step 9: Normalizing whitespace", 'batch')
             before = current_text
             current_text = TextPreprocessor.normalize_whitespace(current_text)
             current_text = log_transformation("Normalize Whitespace", before, current_text)
 
             # Step 16: Chunk for TTS using spaCy + Deepgram approach
-            self.log_message("🔹 Step 16: Chunking for TTS (spaCy + Deepgram hybrid)", 'batch')
+            self.log_message("[*] Step 16: Chunking for TTS (spaCy + Deepgram hybrid)", 'batch')
             self.log_message("   Using linguistic sentence boundaries (250 char max)", 'info')
             before = current_text
             current_text = TextPreprocessor.chunk_for_tts(current_text, max_chars=250)
@@ -1780,7 +1780,7 @@ class TTSPreprocessorGUI:
 
             # Log final results
             self.log_message("="*70, 'success')
-            self.log_message("✅ PRE-CLEANING COMPLETE!", 'success')
+            self.log_message("[DONE] PRE-CLEANING COMPLETE!", 'success')
             self.log_message("="*70, 'success')
             self.log_message(f"   Original:   {original_lines:,} lines, {original_size:,} chars", 'info')
             self.log_message(f"   Processed:  {processed_lines:,} lines, {processed_size:,} chars", 'success')
@@ -1798,7 +1798,7 @@ class TTSPreprocessorGUI:
                                    f"Saved to: {output_path.name}\n\n"
                                    f"Use precleaned file as input?"):
                 self.input_file.set(str(output_path))
-                self.log_message(f"✓ Input file updated to: {output_path.name}", 'success')
+                self.log_message(f"[OK] Input file updated to: {output_path.name}", 'success')
 
                 # Update preview
                 preview_text = preprocessed[:1000] + "..." if len(preprocessed) > 1000 else preprocessed
@@ -1806,7 +1806,7 @@ class TTSPreprocessorGUI:
                 self.input_preview.insert(1.0, preview_text)
 
         except Exception as e:
-            self.log_message(f"✗ Pre-cleaning failed: {str(e)}", 'error')
+            self.log_message(f"[X] Pre-cleaning failed: {str(e)}", 'error')
             messagebox.showerror("Pre-cleaning Error", f"Failed to pre-clean file:\n{str(e)}")
 
     def _show_text_differences(self, before, after, step_name):
@@ -1844,7 +1844,7 @@ class TTSPreprocessorGUI:
 
         # Show deletions
         if deletions and changes_shown < max_examples:
-            self.log_message("   📉 Text Removed:", 'warning')
+            self.log_message("   [DOWN] Text Removed:", 'warning')
             for deletion in deletions[:max_examples - changes_shown]:
                 if deletion.strip():
                     preview = deletion[:100] + "..." if len(deletion) > 100 else deletion
@@ -1857,7 +1857,7 @@ class TTSPreprocessorGUI:
 
         # Show additions (new text)
         if additions and changes_shown < max_examples:
-            self.log_message("   📈 Text Added:", 'success')
+            self.log_message("   [UP] Text Added:", 'success')
             for addition in additions[:max_examples - changes_shown]:
                 if addition.strip():
                     preview = addition[:100] + "..." if len(addition) > 100 else addition
@@ -1878,7 +1878,7 @@ class TTSPreprocessorGUI:
                     before_snippet = before[context_start:context_end]
                     after_snippet = after[context_start:min(len(after), context_end)]
 
-                    self.log_message("   🔄 Example Change:", 'info')
+                    self.log_message("   [RETRY] Example Change:", 'info')
                     self.log_message(f"      Before: '{before_snippet}'", 'warning')
                     self.log_message(f"      After:  '{after_snippet}'", 'success')
                     break
@@ -1911,12 +1911,12 @@ class TTSPreprocessorGUI:
             
             stats = f"""Batch:     {self.current_batch}/{self.total_batches}
 Time:      {elapsed_str}
-Status:    {'⏸ PAUSED' if self.is_paused else '▶ PROCESSING'}
+Status:    {'[PAUSE] PAUSED' if self.is_paused else '[RESUME] PROCESSING'}
 Progress:  {self.progress_bar['value']:.1f}%"""
         else:
             stats = """Batch:     -
 Time:      00:00:00
-Status:    ⏹ STOPPED
+Status:    [STOP] STOPPED
 Progress:  0.0%"""
         
         self.stats_text.insert(1.0, stats)
@@ -1978,11 +1978,11 @@ Progress:  0.0%"""
         self.is_paused = not self.is_paused
         
         if self.is_paused:
-            self.pause_btn.config(text="▶ Resume")
-            self.log_message("⏸ Processing PAUSED by user", 'warning')
+            self.pause_btn.config(text="[RESUME] Resume")
+            self.log_message("[PAUSE] Processing PAUSED by user", 'warning')
         else:
-            self.pause_btn.config(text="⏸ Pause")
-            self.log_message("▶ Processing RESUMED", 'success')
+            self.pause_btn.config(text="[PAUSE] Pause")
+            self.log_message("[RESUME] Processing RESUMED", 'success')
         
         self.update_stats()
     
@@ -1990,7 +1990,7 @@ Progress:  0.0%"""
         """Stop processing"""
         if messagebox.askyesno("Stop Processing", "Are you sure you want to stop?\n\nProgress will be saved."):
             self.is_processing = False
-            self.log_message("⏹ [Request interrupted by user]", 'error')
+            self.log_message("[STOP] [Request interrupted by user]", 'error')
             self.finish_processing()
     
     def finish_processing(self):
@@ -2074,37 +2074,37 @@ Progress:  0.0%"""
 
         # Log alignment check
         self.log_message(f"   {'='*66}", 'info')
-        self.log_message(f"   🔍 BATCH ALIGNMENT CHECK", 'batch')
+        self.log_message(f"   [CHECK] BATCH ALIGNMENT CHECK", 'batch')
         self.log_message(f"   {'='*66}", 'info')
 
         # First sentence comparison
-        self.log_message(f"   📥 INPUT First sentence:", 'info')
+        self.log_message(f"   [IN] INPUT First sentence:", 'info')
         self.log_message(f"      '{input_first}'", 'info')
-        self.log_message(f"   📤 OUTPUT First sentence:", 'info')
+        self.log_message(f"   [OUT] OUTPUT First sentence:", 'info')
         self.log_message(f"      '{output_first}'", 'info')
 
         # Check if first sentences match (allowing for minor transformations)
         first_match = self._fuzzy_sentence_match(input_first, output_first)
         if first_match:
-            self.log_message(f"   ✓ First sentences aligned", 'success')
+            self.log_message(f"   [OK] First sentences aligned", 'success')
         else:
-            self.log_message(f"   ⚠ WARNING: First sentences DO NOT match!", 'warning')
+            self.log_message(f"   [WARNING] WARNING: First sentences DO NOT match!", 'warning')
             self._show_sentence_diff(input_first, output_first, "FIRST")
 
         self.log_message(f"", 'info')
 
         # Last sentence comparison
-        self.log_message(f"   📥 INPUT Last sentence:", 'info')
+        self.log_message(f"   [IN] INPUT Last sentence:", 'info')
         self.log_message(f"      '{input_last}'", 'info')
-        self.log_message(f"   📤 OUTPUT Last sentence:", 'info')
+        self.log_message(f"   [OUT] OUTPUT Last sentence:", 'info')
         self.log_message(f"      '{output_last}'", 'info')
 
         # Check if last sentences match
         last_match = self._fuzzy_sentence_match(input_last, output_last)
         if last_match:
-            self.log_message(f"   ✓ Last sentences aligned", 'success')
+            self.log_message(f"   [OK] Last sentences aligned", 'success')
         else:
-            self.log_message(f"   ⚠ WARNING: Last sentences DO NOT match!", 'warning')
+            self.log_message(f"   [WARNING] WARNING: Last sentences DO NOT match!", 'warning')
             self._show_sentence_diff(input_last, output_last, "LAST")
 
         self.log_message(f"   {'='*66}", 'info')
@@ -2144,7 +2144,7 @@ Progress:  0.0%"""
 
     def _show_sentence_diff(self, input_sent, output_sent, position):
         """Show detailed diff between input and output sentences"""
-        self.log_message(f"   🔄 OUTPUT diff view ({position} sentence):", 'warning')
+        self.log_message(f"   [RETRY] OUTPUT diff view ({position} sentence):", 'warning')
 
         # Normalize and split into words
         input_words = input_sent.split()
@@ -2158,14 +2158,14 @@ Progress:  0.0%"""
         added = output_set - input_set
 
         if removed:
-            self.log_message(f"      ➖ Removed: {', '.join(removed)}", 'error')
+            self.log_message(f"      [-] Removed: {', '.join(removed)}", 'error')
         if added:
-            self.log_message(f"      ➕ Added: {', '.join(added)}", 'warning')
+            self.log_message(f"      [+] Added: {', '.join(added)}", 'warning')
 
         # Show character-level similarity
         import difflib
         diff_ratio = difflib.SequenceMatcher(None, input_sent, output_sent).ratio()
-        self.log_message(f"      📊 Similarity: {diff_ratio*100:.1f}%", 'info')
+        self.log_message(f"      [STAT] Similarity: {diff_ratio*100:.1f}%", 'info')
 
     def check_batch_continuity(self, current_input_text, current_output_text, batch_num):
         """
@@ -2186,11 +2186,11 @@ Progress:  0.0%"""
 
         # Log continuity check
         self.log_message(f"   {'='*66}", 'info')
-        self.log_message(f"   🔗 BATCH CONTINUITY CHECK (Batch {batch_num-1} → {batch_num})", 'batch')
+        self.log_message(f"   [LINK] BATCH CONTINUITY CHECK (Batch {batch_num-1} → {batch_num})", 'batch')
         self.log_message(f"   {'='*66}", 'info')
 
         # Check OUTPUT continuity
-        self.log_message(f"   📤 Generated Output Continuity:", 'info')
+        self.log_message(f"   [OUT] Generated Output Continuity:", 'info')
         self.log_message(f"      BATCH {batch_num-1} OUTPUT last sentence:", 'info')
         self.log_message(f"      '{self.previous_output_last_sentence}'", 'info')
         self.log_message(f"      BATCH {batch_num} OUTPUT first sentence:", 'info')
@@ -2203,14 +2203,14 @@ Progress:  0.0%"""
         )
 
         if output_continuity:
-            self.log_message(f"      ✓ Output flows naturally between batches", 'success')
+            self.log_message(f"      [OK] Output flows naturally between batches", 'success')
         else:
-            self.log_message(f"      ⚠ Potential gap or overlap in output!", 'warning')
+            self.log_message(f"      [WARNING] Potential gap or overlap in output!", 'warning')
 
         self.log_message(f"", 'info')
 
         # Check INPUT continuity (for reference)
-        self.log_message(f"   📥 Original Input Continuity:", 'info')
+        self.log_message(f"   [IN] Original Input Continuity:", 'info')
         self.log_message(f"      BATCH {batch_num-1} INPUT last sentence:", 'info')
         self.log_message(f"      '{self.previous_input_last_sentence}'", 'info')
         self.log_message(f"      BATCH {batch_num} INPUT first sentence:", 'info')
@@ -2223,9 +2223,9 @@ Progress:  0.0%"""
         )
 
         if input_continuity:
-            self.log_message(f"      ✓ Input batches were continuous", 'success')
+            self.log_message(f"      [OK] Input batches were continuous", 'success')
         else:
-            self.log_message(f"      ⚠ Input batches had a gap (expected for paragraph breaks)", 'info')
+            self.log_message(f"      [WARNING] Input batches had a gap (expected for paragraph breaks)", 'info')
 
         self.log_message(f"   {'='*66}", 'info')
 
@@ -2325,14 +2325,14 @@ Remember: Only output the cleaned NEW text, not the context."""
             api_key = self.api_key.get().strip()
             if api_key:
                 error_msg = SettingsManager.mask_api_key(error_msg, api_key)
-            self.log_message(f"✗ Error processing batch {batch_num}: {error_msg}", 'error')
+            self.log_message(f"[X] Error processing batch {batch_num}: {error_msg}", 'error')
             return None, context, 0, 0
     
     def process_batches(self):
         """Main processing loop (runs in separate thread)"""
         try:
             # Read input file
-            self.log_message(f"📖 Reading input file: {self.input_file.get()}", 'info')
+            self.log_message(f"[READ] Reading input file: {self.input_file.get()}", 'info')
             with open(self.input_file.get(), 'r', encoding='utf-8') as f:
                 lines = f.readlines()
             
@@ -2385,7 +2385,7 @@ Remember: Only output the cleaned NEW text, not the context."""
 
                 # Log batch info
                 self.log_message(f"\n{'='*70}", 'batch')
-                self.log_message(f"📝 BATCH {batch_num}/{self.total_batches}", 'batch')
+                self.log_message(f"[BATCH] BATCH {batch_num}/{self.total_batches}", 'batch')
                 self.log_message(f"{'='*70}", 'batch')
                 self.log_message(f"   Lines: {i+1} to {actual_end}", 'info')
                 self.log_message(f"   Input:  {input_line_count} lines, {input_char_count} chars", 'info')
@@ -2394,7 +2394,7 @@ Remember: Only output the cleaned NEW text, not the context."""
                     self.log_message(f"   Using context from Batch {batch_num-1}", 'info')
                 
                 # Process batch
-                self.log_message(f"   ⚙ Processing with {self.model_name.get()}...", 'info')
+                self.log_message(f"   [PROC] Processing with {self.model_name.get()}...", 'info')
                 batch_start_time = time.time()
 
                 cleaned, next_context, llm_input_size, llm_output_size = self.process_single_batch(
@@ -2418,8 +2418,8 @@ Remember: Only output the cleaned NEW text, not the context."""
                     llm_change = ((llm_output_size - llm_input_size) / llm_input_size * 100) if llm_input_size > 0 else 0
 
                     # Log LLM input/output comparison
-                    self.log_message(f"   📤 Sent to LLM:      {llm_input_size} chars", 'info')
-                    self.log_message(f"   📥 Received from LLM: {llm_output_size} chars ({llm_change:+.1f}%)", 'info')
+                    self.log_message(f"   [OUT] Sent to LLM:      {llm_input_size} chars", 'info')
+                    self.log_message(f"   [IN] Received from LLM: {llm_output_size} chars ({llm_change:+.1f}%)", 'info')
 
                     # Calculate configurable threshold based on response percentage
                     # response_percentage represents minimum acceptable output (e.g., 85% = at least 85% of input)
@@ -2428,15 +2428,15 @@ Remember: Only output the cleaned NEW text, not the context."""
                     # Validate LLM response size - check for excessive differences
                     # Allow for reasonable variation but flag suspicious changes
                     if llm_change > 100:  # Output is more than 2x the input
-                        self.log_message(f"   ✗ CRITICAL ERROR: LLM response is {llm_change:+.1f}% larger than input!", 'error')
-                        self.log_message(f"   ✗ Expected ~{llm_input_size} chars, received {llm_output_size} chars", 'error')
-                        self.log_message(f"   ✗ This indicates the LLM may be hallucinating or adding unwanted content", 'error')
-                        self.log_message(f"   ⏹ Stopping processing to prevent data contamination", 'error')
+                        self.log_message(f"   [X] CRITICAL ERROR: LLM response is {llm_change:+.1f}% larger than input!", 'error')
+                        self.log_message(f"   [X] Expected ~{llm_input_size} chars, received {llm_output_size} chars", 'error')
+                        self.log_message(f"   [X] This indicates the LLM may be hallucinating or adding unwanted content", 'error')
+                        self.log_message(f"   [STOP] Stopping processing to prevent data contamination", 'error')
                         break
                     elif llm_change < threshold:  # Output below configured threshold
-                        self.log_message(f"   ✗ CRITICAL ERROR: LLM response is {llm_change:.1f}% vs threshold {threshold:.1f}%!", 'error')
-                        self.log_message(f"   ✗ Expected at least {self.response_percentage.get()}% of input size", 'error')
-                        self.log_message(f"   ✗ This indicates the LLM may be truncating or losing content", 'error')
+                        self.log_message(f"   [X] CRITICAL ERROR: LLM response is {llm_change:.1f}% vs threshold {threshold:.1f}%!", 'error')
+                        self.log_message(f"   [X] Expected at least {self.response_percentage.get()}% of input size", 'error')
+                        self.log_message(f"   [X] This indicates the LLM may be truncating or losing content", 'error')
 
                         if retry_count == 0:
                             # First occurrence - track stats and retry the batch
@@ -2447,7 +2447,7 @@ Remember: Only output the cleaned NEW text, not the context."""
                                 'llm_change': llm_change
                             }
                             retry_count += 1
-                            self.log_message(f"   🔄 Retrying batch {batch_num} (attempt {retry_count + 1}/2)...", 'warning')
+                            self.log_message(f"   [RETRY] Retrying batch {batch_num} (attempt {retry_count + 1}/2)...", 'warning')
                             continue  # Retry same batch without advancing
                         else:
                             # Second occurrence - track second attempt stats
@@ -2459,7 +2459,7 @@ Remember: Only output the cleaned NEW text, not the context."""
 
                             # Generate retry report
                             self.log_message(f"\n{'='*70}", 'error')
-                            self.log_message(f"📊 RETRY REPORT - Batch {batch_num}", 'error')
+                            self.log_message(f"[STAT] RETRY REPORT - Batch {batch_num}", 'error')
                             self.log_message(f"{'='*70}", 'error')
                             self.log_message(f"   Configured Threshold: {self.response_percentage.get()}% (or {threshold:.1f}% change)", 'info')
                             self.log_message(f"", 'info')
@@ -2478,8 +2478,8 @@ Remember: Only output the cleaned NEW text, not the context."""
                             self.log_message(f"{'='*70}", 'error')
 
                             # Pause for manual intervention
-                            self.log_message(f"   ⏸ PAUSING processing after retry failed", 'error')
-                            self.log_message(f"   ⏸ Please review and manually resume when ready", 'warning')
+                            self.log_message(f"   [PAUSE] PAUSING processing after retry failed", 'error')
+                            self.log_message(f"   [PAUSE] Please review and manually resume when ready", 'warning')
                             retry_count = 0  # Reset for next batch
                             retry_stats = {
                                 'batch_num': None,
@@ -2487,7 +2487,7 @@ Remember: Only output the cleaned NEW text, not the context."""
                                 'second_attempt': {'llm_input': 0, 'llm_output': 0, 'llm_change': 0}
                             }
                             self.is_paused = True
-                            self.pause_btn.config(text="▶ Resume")
+                            self.pause_btn.config(text="[RESUME] Resume")
                             continue  # Pause and wait for user to resume
 
                     # Check batch continuity (for batch 2+)
@@ -2502,8 +2502,8 @@ Remember: Only output the cleaned NEW text, not the context."""
                     self.log_message(f"", 'info')
 
                     if not alignment_ok:
-                        self.log_message(f"   ⚠ ALIGNMENT WARNING: Input/Output boundaries don't match!", 'warning')
-                        self.log_message(f"   ⚠ This may indicate content loss or hallucination", 'warning')
+                        self.log_message(f"   [WARNING] ALIGNMENT WARNING: Input/Output boundaries don't match!", 'warning')
+                        self.log_message(f"   [WARNING] This may indicate content loss or hallucination", 'warning')
                         # Continue processing but warn user
 
                     # Store last sentences for continuity check in next batch
@@ -2528,18 +2528,18 @@ Remember: Only output the cleaned NEW text, not the context."""
                     self.previous_context = next_context
 
                     # Log results with comparison
-                    self.log_message(f"   ✓ Batch complete in {batch_time:.1f}s", 'success')
+                    self.log_message(f"   [OK] Batch complete in {batch_time:.1f}s", 'success')
                     self.log_message(f"   Batch text: {input_line_count} lines, {input_char_count} chars", 'info')
                     self.log_message(f"   Output:     {output_line_count} lines, {output_char_count} chars", 'success')
                     self.log_message(f"   Change:     {char_reduction:+.1f}% chars, {line_reduction:+.1f}% lines", 'info')
 
                     # Warn if excessive data loss from batch text to output
                     if char_reduction > 15:
-                        self.log_message(f"   ⚠ WARNING: Output reduced by {char_reduction:.1f}% from batch - check for truncation!", 'warning')
+                        self.log_message(f"   [WARNING] WARNING: Output reduced by {char_reduction:.1f}% from batch - check for truncation!", 'warning')
                     elif llm_change > 50:
-                        self.log_message(f"   ⚠ WARNING: LLM output increased by {llm_change:+.1f}% - review for added content", 'warning')
+                        self.log_message(f"   [WARNING] WARNING: LLM output increased by {llm_change:+.1f}% - review for added content", 'warning')
                     elif llm_change < -30:
-                        self.log_message(f"   ⚠ WARNING: LLM output decreased by {llm_change:.1f}% - review for lost content", 'warning')
+                        self.log_message(f"   [WARNING] WARNING: LLM output decreased by {llm_change:.1f}% - review for lost content", 'warning')
 
                     # Show context (filtered)
                     if next_context:
@@ -2548,7 +2548,7 @@ Remember: Only output the cleaned NEW text, not the context."""
                     # Reset retry counter on successful batch
                     retry_count = 0
                 else:
-                    self.log_message(f"   ✗ Batch FAILED - stopping", 'error')
+                    self.log_message(f"   [X] Batch FAILED - stopping", 'error')
                     break
 
                 # Update progress
@@ -2565,7 +2565,7 @@ Remember: Only output the cleaned NEW text, not the context."""
             if self.is_processing:
                 elapsed = time.time() - self.start_time
                 self.log_message(f"\n{'='*70}", 'success')
-                self.log_message(f"✅ PROCESSING COMPLETE!", 'success')
+                self.log_message(f"[DONE] PROCESSING COMPLETE!", 'success')
                 self.log_message(f"{'='*70}", 'success')
                 self.log_message(f"   Total batches: {batch_num-1}", 'success')
                 self.log_message(f"   Total time: {time.strftime('%H:%M:%S', time.gmtime(elapsed))}", 'success')
@@ -2574,7 +2574,7 @@ Remember: Only output the cleaned NEW text, not the context."""
                 messagebox.showinfo("Complete", f"Processing complete!\n\nBatches processed: {batch_num-1}\nOutput saved to: {self.output_file.get()}")
             
         except Exception as e:
-            self.log_message(f"\n✗ FATAL ERROR: {str(e)}", 'error')
+            self.log_message(f"\n[X] FATAL ERROR: {str(e)}", 'error')
             messagebox.showerror("Error", f"Processing failed:\n{str(e)}")
         
         finally:
