@@ -98,6 +98,7 @@ class SettingsManager:
             "region": "singapore",  # singapore or beijing (free tier only in singapore!)
             "model_name": "qwen-flash",  # Most economical for free tier
             "temperature": 0.2,
+            "response_percentage": 85,  # Default response percentage threshold
             "seed": 42,
             "batch_size": 500,
             "max_tokens": 16000,
@@ -1004,6 +1005,128 @@ class TextPreprocessor:
 
 
 # ============================================================================
+# TEXT WIDGET WITH LINE NUMBERS
+# ============================================================================
+
+class TextWithLineNumbers(tk.Frame):
+    """Text widget with synchronized line numbers"""
+
+    def __init__(self, parent, **kwargs):
+        tk.Frame.__init__(self, parent)
+
+        # Extract text widget specific options
+        text_options = {}
+        for key in ['wrap', 'font', 'bg', 'fg', 'height', 'width']:
+            if key in kwargs:
+                text_options[key] = kwargs.pop(key)
+
+        # Create line numbers canvas
+        self.line_numbers = tk.Canvas(self, width=50, bg='#e0e0e0', highlightthickness=0)
+        self.line_numbers.pack(side=tk.LEFT, fill=tk.Y)
+
+        # Create scrollbar
+        self.scrollbar = tk.Scrollbar(self, orient=tk.VERTICAL)
+        self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Create text widget
+        self.text = tk.Text(self, yscrollcommand=self._on_text_scroll, **text_options)
+        self.text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Configure scrollbar
+        self.scrollbar.config(command=self.text.yview)
+
+        # Bind events for line number updates
+        self.text.bind('<<Modified>>', self._on_modified)
+        self.text.bind('<Configure>', self._on_configure)
+        self.text.bind('<KeyRelease>', self._schedule_update)
+        self.text.bind('<ButtonRelease>', self._schedule_update)
+
+        # Update scheduling
+        self._update_scheduled = False
+
+    def _on_text_scroll(self, *args):
+        """Handle text widget scrolling"""
+        self.scrollbar.set(*args)
+        self._update_line_numbers()
+
+    def _on_modified(self, event=None):
+        """Handle text modification"""
+        self._schedule_update()
+
+    def _on_configure(self, event=None):
+        """Handle widget resize"""
+        self._schedule_update()
+
+    def _schedule_update(self, event=None):
+        """Schedule line number update to avoid excessive redraws"""
+        if not self._update_scheduled:
+            self._update_scheduled = True
+            self.after(10, self._do_update)
+
+    def _do_update(self):
+        """Perform the actual update"""
+        self._update_scheduled = False
+        self._update_line_numbers()
+
+    def _update_line_numbers(self):
+        """Redraw line numbers"""
+        self.line_numbers.delete('all')
+
+        # Get the index of the first visible line
+        i = self.text.index('@0,0')
+        while True:
+            dline = self.text.dlineinfo(i)
+            if dline is None:
+                break
+            y = dline[1]
+            linenum = str(i).split('.')[0]
+            self.line_numbers.create_text(
+                45, y, anchor=tk.NE, text=linenum,
+                font=self.text.cget('font'), fill='#666666'
+            )
+            i = self.text.index(f'{i}+1line')
+
+    # Proxy methods to make this behave like a Text widget
+    def insert(self, *args, **kwargs):
+        return self.text.insert(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        return self.text.delete(*args, **kwargs)
+
+    def get(self, *args, **kwargs):
+        return self.text.get(*args, **kwargs)
+
+    def see(self, *args, **kwargs):
+        return self.text.see(*args, **kwargs)
+
+    def tag_config(self, *args, **kwargs):
+        return self.text.tag_config(*args, **kwargs)
+
+    def tag_add(self, *args, **kwargs):
+        return self.text.tag_add(*args, **kwargs)
+
+    def tag_remove(self, *args, **kwargs):
+        return self.text.tag_remove(*args, **kwargs)
+
+    def search(self, *args, **kwargs):
+        return self.text.search(*args, **kwargs)
+
+    def mark_set(self, *args, **kwargs):
+        return self.text.mark_set(*args, **kwargs)
+
+    def yview(self, *args, **kwargs):
+        return self.text.yview(*args, **kwargs)
+
+    def config(self, **kwargs):
+        """Configure the text widget"""
+        return self.text.config(**kwargs)
+
+    def configure(self, **kwargs):
+        """Configure the text widget"""
+        return self.text.configure(**kwargs)
+
+
+# ============================================================================
 # GUI APPLICATION
 # ============================================================================
 
@@ -1028,6 +1151,7 @@ class TTSPreprocessorGUI:
         self.seed = tk.IntVar(value=self.settings_mgr.settings.get("seed", 42))
         self.batch_size = tk.IntVar(value=self.settings_mgr.settings.get("batch_size", 500))
         self.max_tokens = tk.IntVar(value=self.settings_mgr.settings.get("max_tokens", 16000))
+        self.response_percentage = tk.IntVar(value=self.settings_mgr.settings.get("response_percentage", 85))
 
         # Load saved file paths
         self.input_file.set(self.settings_mgr.settings.get("last_input_file", ""))
@@ -1139,7 +1263,11 @@ class TTSPreprocessorGUI:
         ttk.Label(params_frame, text="Max Tokens:").grid(row=0, column=6, sticky=tk.W, padx=5)
         ttk.Spinbox(params_frame, from_=1000, to=32000, increment=1000,
                     textvariable=self.max_tokens, width=10).grid(row=0, column=7, padx=5)
-        
+
+        ttk.Label(params_frame, text="Response %:").grid(row=0, column=8, sticky=tk.W, padx=5)
+        ttk.Spinbox(params_frame, from_=30, to=100, increment=5,
+                    textvariable=self.response_percentage, width=10).grid(row=0, column=9, padx=5)
+
         # ==== MIDDLE SECTION: Progress & Controls ====
         control_frame = ttk.Frame(self.root)
         control_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -1197,41 +1325,188 @@ class TTSPreprocessorGUI:
         self.log_text.tag_config('error', foreground='#f48771')
         self.log_text.tag_config('batch', foreground='#c586c0')
         
-        # Tab 2: Current Batch Preview
+        # Tab 2: Diff Viewer (Batch Preview with line numbers)
         preview_frame = ttk.Frame(notebook)
-        notebook.add(preview_frame, text="👁 Current Batch Preview")
-        
+        notebook.add(preview_frame, text="👁 Diff Viewer")
+
         preview_paned = ttk.PanedWindow(preview_frame, orient=tk.HORIZONTAL)
         preview_paned.pack(fill=tk.BOTH, expand=True)
-        
-        # Input preview
-        input_preview_frame = ttk.LabelFrame(preview_paned, text="Input Text")
-        self.input_preview = scrolledtext.ScrolledText(input_preview_frame, wrap=tk.WORD, 
-                                                       font=('Arial', 9), bg='#fff8dc')
+
+        # Input preview (left side with line numbers)
+        input_preview_frame = ttk.LabelFrame(preview_paned, text="INPUT to AI Model")
+        self.input_preview = TextWithLineNumbers(input_preview_frame, wrap=tk.WORD,
+                                                 font=('Courier New', 9), bg='#fff8dc')
         self.input_preview.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        preview_paned.add(input_preview_frame)
-        
-        # Output preview
-        output_preview_frame = ttk.LabelFrame(preview_paned, text="Output Text")
-        self.output_preview = scrolledtext.ScrolledText(output_preview_frame, wrap=tk.WORD, 
-                                                        font=('Arial', 9), bg='#e8f4ea')
+        preview_paned.add(input_preview_frame, weight=1)
+
+        # Output preview (right side with line numbers)
+        output_preview_frame = ttk.LabelFrame(preview_paned, text="AI Model OUTPUT")
+        self.output_preview = TextWithLineNumbers(output_preview_frame, wrap=tk.WORD,
+                                                  font=('Courier New', 9), bg='#e8f4ea')
         self.output_preview.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        preview_paned.add(output_preview_frame)
-        
-        # Tab 3: Full Output View
+        preview_paned.add(output_preview_frame, weight=1)
+
+        # Synchronized scrolling for diff viewer
+        self._setup_synchronized_scrolling()
+
+        # Tab 3: Full Output View with line numbers and Find function
         output_frame = ttk.Frame(notebook)
         notebook.add(output_frame, text="📄 Full Output")
-        
-        self.full_output_text = scrolledtext.ScrolledText(output_frame, wrap=tk.WORD, 
-                                                          font=('Arial', 10))
+
+        # Text area with line numbers
+        self.full_output_text = TextWithLineNumbers(output_frame, wrap=tk.WORD,
+                                                    font=('Courier New', 10), bg='white')
         self.full_output_text.pack(fill=tk.BOTH, expand=True)
-        
+
+        # Find toolbar
+        find_frame = ttk.Frame(output_frame)
+        find_frame.pack(fill=tk.X, padx=5, pady=5)
+
+        ttk.Label(find_frame, text="Find:").pack(side=tk.LEFT, padx=5)
+        self.find_entry = ttk.Entry(find_frame, width=30)
+        self.find_entry.pack(side=tk.LEFT, padx=5)
+        self.find_entry.bind('<Return>', lambda e: self._find_in_output())
+
+        self.find_btn = ttk.Button(find_frame, text="Find", command=self._find_in_output)
+        self.find_btn.pack(side=tk.LEFT, padx=2)
+
+        ttk.Button(find_frame, text="Next", command=self._find_next).pack(side=tk.LEFT, padx=2)
+        ttk.Button(find_frame, text="Clear", command=self._clear_find).pack(side=tk.LEFT, padx=2)
+
+        self.find_count_label = ttk.Label(find_frame, text="")
+        self.find_count_label.pack(side=tk.LEFT, padx=10)
+
+        # Find state
+        self.find_matches = []
+        self.find_current_index = 0
+
         # Status Bar
         self.status_bar = ttk.Label(self.root, text="Ready", relief=tk.SUNKEN, anchor=tk.W)
         self.status_bar.pack(fill=tk.X, side=tk.BOTTOM)
         
         self.log_message("✓ GUI initialized. Configure settings and load files to begin.", 'success')
-    
+
+    def _setup_synchronized_scrolling(self):
+        """Setup synchronized scrolling between diff viewer panels"""
+        def sync_scroll(*args):
+            # Synchronize both text widgets
+            self.input_preview.yview(*args)
+            self.output_preview.yview(*args)
+
+        # Override the yscrollcommand for both widgets to sync them
+        def make_sync_command(other_widget):
+            def sync_command(*args):
+                # Update scrollbar
+                other_widget.scrollbar.set(*args)
+                # Sync scroll positions
+                try:
+                    # Get the first visible line position
+                    first_visible = other_widget.text.index('@0,0')
+                    # Update line numbers
+                    other_widget._update_line_numbers()
+                except:
+                    pass
+            return sync_command
+
+        # Bind mousewheel events for synchronized scrolling
+        def on_mousewheel(event, source_widget, target_widget):
+            # Calculate scroll amount
+            delta = -1 if event.delta > 0 else 1
+            # Scroll both widgets
+            source_widget.text.yview_scroll(delta, 'units')
+            target_widget.text.yview_scroll(delta, 'units')
+            return "break"
+
+        # Bind mousewheel to input preview
+        self.input_preview.text.bind('<MouseWheel>',
+                                      lambda e: on_mousewheel(e, self.input_preview, self.output_preview))
+        self.input_preview.text.bind('<Button-4>',
+                                      lambda e: on_mousewheel(type('Event', (), {'delta': 120})(), self.input_preview, self.output_preview))
+        self.input_preview.text.bind('<Button-5>',
+                                      lambda e: on_mousewheel(type('Event', (), {'delta': -120})(), self.input_preview, self.output_preview))
+
+        # Bind mousewheel to output preview
+        self.output_preview.text.bind('<MouseWheel>',
+                                       lambda e: on_mousewheel(e, self.output_preview, self.input_preview))
+        self.output_preview.text.bind('<Button-4>',
+                                       lambda e: on_mousewheel(type('Event', (), {'delta': 120})(), self.output_preview, self.input_preview))
+        self.output_preview.text.bind('<Button-5>',
+                                       lambda e: on_mousewheel(type('Event', (), {'delta': -120})(), self.output_preview, self.input_preview))
+
+    def _find_in_output(self):
+        """Find all occurrences of search term in Full Output"""
+        search_term = self.find_entry.get()
+        if not search_term:
+            return
+
+        # Clear previous highlights
+        self._clear_find()
+
+        # Search for all occurrences
+        self.find_matches = []
+        start_pos = '1.0'
+        while True:
+            pos = self.full_output_text.search(search_term, start_pos, tk.END, nocase=True)
+            if not pos:
+                break
+            end_pos = f"{pos}+{len(search_term)}c"
+            self.find_matches.append((pos, end_pos))
+            start_pos = end_pos
+
+        # Highlight all matches
+        if self.find_matches:
+            for start, end in self.find_matches:
+                self.full_output_text.tag_add('search_highlight', start, end)
+
+            # Configure highlight tag
+            self.full_output_text.tag_config('search_highlight', background='yellow', foreground='black')
+
+            # Show first match
+            self.find_current_index = 0
+            self._highlight_current_match()
+
+            # Update count label
+            self.find_count_label.config(text=f"{len(self.find_matches)} matches found")
+        else:
+            self.find_count_label.config(text="No matches found")
+
+    def _find_next(self):
+        """Jump to next search match"""
+        if not self.find_matches:
+            return
+
+        self.find_current_index = (self.find_current_index + 1) % len(self.find_matches)
+        self._highlight_current_match()
+
+    def _highlight_current_match(self):
+        """Highlight the current match with a different color"""
+        if not self.find_matches:
+            return
+
+        # Remove previous current highlight
+        self.full_output_text.tag_remove('current_match', '1.0', tk.END)
+
+        # Add current match highlight
+        start, end = self.find_matches[self.find_current_index]
+        self.full_output_text.tag_add('current_match', start, end)
+        self.full_output_text.tag_config('current_match', background='orange', foreground='black')
+
+        # Scroll to current match
+        self.full_output_text.see(start)
+
+        # Update count label
+        self.find_count_label.config(
+            text=f"Match {self.find_current_index + 1}/{len(self.find_matches)}"
+        )
+
+    def _clear_find(self):
+        """Clear all search highlights"""
+        self.full_output_text.tag_remove('search_highlight', '1.0', tk.END)
+        self.full_output_text.tag_remove('current_match', '1.0', tk.END)
+        self.find_matches = []
+        self.find_current_index = 0
+        self.find_count_label.config(text="")
+
     def browse_input(self):
         """Browse for input file"""
         filename = filedialog.askopenfilename(
@@ -1293,6 +1568,7 @@ class TTSPreprocessorGUI:
             "seed": self.seed.get(),
             "batch_size": self.batch_size.get(),
             "max_tokens": self.max_tokens.get(),
+            "response_percentage": self.response_percentage.get(),
             "last_input_file": self.input_file.get(),
             "last_output_file": self.output_file.get(),
             "last_prompt_file": self.prompt_file.get()
@@ -2072,6 +2348,13 @@ Remember: Only output the cleaned NEW text, not the context."""
             batch_num = 1
             retry_count = 0  # Track retries for low response errors
 
+            # Retry statistics tracking
+            retry_stats = {
+                'batch_num': None,
+                'first_attempt': {'llm_input': 0, 'llm_output': 0, 'llm_change': 0},
+                'second_attempt': {'llm_input': 0, 'llm_output': 0, 'llm_change': 0}
+            }
+
             while i < total_lines and self.is_processing:
                 # Wait if paused
                 while self.is_paused and self.is_processing:
@@ -2138,6 +2421,10 @@ Remember: Only output the cleaned NEW text, not the context."""
                     self.log_message(f"   📤 Sent to LLM:      {llm_input_size} chars", 'info')
                     self.log_message(f"   📥 Received from LLM: {llm_output_size} chars ({llm_change:+.1f}%)", 'info')
 
+                    # Calculate configurable threshold based on response percentage
+                    # response_percentage represents minimum acceptable output (e.g., 85% = at least 85% of input)
+                    threshold = -(100 - self.response_percentage.get())
+
                     # Validate LLM response size - check for excessive differences
                     # Allow for reasonable variation but flag suspicious changes
                     if llm_change > 100:  # Output is more than 2x the input
@@ -2146,21 +2433,59 @@ Remember: Only output the cleaned NEW text, not the context."""
                         self.log_message(f"   ✗ This indicates the LLM may be hallucinating or adding unwanted content", 'error')
                         self.log_message(f"   ⏹ Stopping processing to prevent data contamination", 'error')
                         break
-                    elif llm_change < -50:  # Output is less than half the input
-                        self.log_message(f"   ✗ CRITICAL ERROR: LLM response is {llm_change:.1f}% smaller than input!", 'error')
-                        self.log_message(f"   ✗ Expected ~{llm_input_size} chars, received {llm_output_size} chars", 'error')
+                    elif llm_change < threshold:  # Output below configured threshold
+                        self.log_message(f"   ✗ CRITICAL ERROR: LLM response is {llm_change:.1f}% vs threshold {threshold:.1f}%!", 'error')
+                        self.log_message(f"   ✗ Expected at least {self.response_percentage.get()}% of input size", 'error')
                         self.log_message(f"   ✗ This indicates the LLM may be truncating or losing content", 'error')
 
                         if retry_count == 0:
-                            # First occurrence - retry the batch
+                            # First occurrence - track stats and retry the batch
+                            retry_stats['batch_num'] = batch_num
+                            retry_stats['first_attempt'] = {
+                                'llm_input': llm_input_size,
+                                'llm_output': llm_output_size,
+                                'llm_change': llm_change
+                            }
                             retry_count += 1
                             self.log_message(f"   🔄 Retrying batch {batch_num} (attempt {retry_count + 1}/2)...", 'warning')
                             continue  # Retry same batch without advancing
                         else:
-                            # Second occurrence - pause for manual intervention
+                            # Second occurrence - track second attempt stats
+                            retry_stats['second_attempt'] = {
+                                'llm_input': llm_input_size,
+                                'llm_output': llm_output_size,
+                                'llm_change': llm_change
+                            }
+
+                            # Generate retry report
+                            self.log_message(f"\n{'='*70}", 'error')
+                            self.log_message(f"📊 RETRY REPORT - Batch {batch_num}", 'error')
+                            self.log_message(f"{'='*70}", 'error')
+                            self.log_message(f"   Configured Threshold: {self.response_percentage.get()}% (or {threshold:.1f}% change)", 'info')
+                            self.log_message(f"", 'info')
+                            self.log_message(f"   First Attempt:", 'warning')
+                            self.log_message(f"     Input:  {retry_stats['first_attempt']['llm_input']} chars", 'info')
+                            self.log_message(f"     Output: {retry_stats['first_attempt']['llm_output']} chars", 'info')
+                            self.log_message(f"     Change: {retry_stats['first_attempt']['llm_change']:+.1f}%", 'warning')
+                            self.log_message(f"", 'info')
+                            self.log_message(f"   Second Attempt:", 'error')
+                            self.log_message(f"     Input:  {retry_stats['second_attempt']['llm_input']} chars", 'info')
+                            self.log_message(f"     Output: {retry_stats['second_attempt']['llm_output']} chars", 'info')
+                            self.log_message(f"     Change: {retry_stats['second_attempt']['llm_change']:+.1f}%", 'error')
+                            self.log_message(f"", 'info')
+                            delta = retry_stats['second_attempt']['llm_change'] - retry_stats['first_attempt']['llm_change']
+                            self.log_message(f"   Improvement: {delta:+.1f}% between attempts", 'info' if delta > 0 else 'error')
+                            self.log_message(f"{'='*70}", 'error')
+
+                            # Pause for manual intervention
                             self.log_message(f"   ⏸ PAUSING processing after retry failed", 'error')
                             self.log_message(f"   ⏸ Please review and manually resume when ready", 'warning')
                             retry_count = 0  # Reset for next batch
+                            retry_stats = {
+                                'batch_num': None,
+                                'first_attempt': {'llm_input': 0, 'llm_output': 0, 'llm_change': 0},
+                                'second_attempt': {'llm_input': 0, 'llm_output': 0, 'llm_change': 0}
+                            }
                             self.is_paused = True
                             self.pause_btn.config(text="▶ Resume")
                             continue  # Pause and wait for user to resume
