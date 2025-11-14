@@ -101,6 +101,7 @@ class SettingsManager:
             "seed": 42,
             "batch_size": 500,
             "max_tokens": 16000,
+            "min_response_pct": 85,
             "last_input_file": "",
             "last_output_file": "",
             "last_prompt_file": ""
@@ -1004,6 +1005,147 @@ class TextPreprocessor:
 
 
 # ============================================================================
+# GUI HELPER CLASSES
+# ============================================================================
+
+class TextWithLineNumbers(tk.Frame):
+    """Text widget with synchronized line numbers"""
+    def __init__(self, parent, **kwargs):
+        tk.Frame.__init__(self, parent)
+
+        # Extract text widget specific args
+        text_kwargs = {}
+        for key in ['wrap', 'font', 'bg', 'fg', 'height', 'width']:
+            if key in kwargs:
+                text_kwargs[key] = kwargs.pop(key)
+
+        # Line numbers canvas
+        self.line_numbers = tk.Canvas(self, width=50, bg='#2d2d2d', highlightthickness=0)
+        self.line_numbers.pack(side=tk.LEFT, fill=tk.Y)
+
+        # Scrollbar
+        self.scrollbar = tk.Scrollbar(self)
+        self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Text widget
+        self.text = tk.Text(self, yscrollcommand=self.on_text_scroll, **text_kwargs)
+        self.text.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+
+        # Configure scrollbar
+        self.scrollbar.config(command=self.text.yview)
+
+        # Bind events
+        self.text.bind('<KeyRelease>', self.on_change)
+        self.text.bind('<MouseWheel>', self.on_change)
+        self.text.bind('<Button-4>', self.on_change)  # Linux scroll up
+        self.text.bind('<Button-5>', self.on_change)  # Linux scroll down
+
+        # Initial line numbers
+        self.redraw_line_numbers()
+
+    def on_text_scroll(self, *args):
+        """Handle text scrolling"""
+        self.scrollbar.set(*args)
+        self.redraw_line_numbers()
+
+    def on_change(self, event=None):
+        """Handle text changes"""
+        self.redraw_line_numbers()
+
+    def redraw_line_numbers(self):
+        """Redraw line numbers"""
+        self.line_numbers.delete('all')
+
+        # Get visible line range
+        i = self.text.index('@0,0')
+        while True:
+            dline = self.text.dlineinfo(i)
+            if dline is None:
+                break
+            y = dline[1]
+            linenum = str(i).split('.')[0]
+            self.line_numbers.create_text(5, y, anchor='nw', text=linenum,
+                                         font=('Courier', 9), fill='#858585')
+            i = self.text.index(f'{i}+1line')
+
+    def insert(self, index, text, *args):
+        """Proxy insert to text widget"""
+        self.text.insert(index, text, *args)
+        self.redraw_line_numbers()
+
+    def delete(self, index1, index2=None):
+        """Proxy delete to text widget"""
+        self.text.delete(index1, index2)
+        self.redraw_line_numbers()
+
+    def get(self, index1, index2=None):
+        """Proxy get to text widget"""
+        return self.text.get(index1, index2)
+
+    def see(self, index):
+        """Proxy see to text widget"""
+        self.text.see(index)
+
+
+class DiffViewer(tk.Frame):
+    """Side-by-side diff viewer with line numbers"""
+    def __init__(self, parent, **kwargs):
+        tk.Frame.__init__(self, parent)
+
+        # Create paned window for side-by-side view
+        paned = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
+        paned.pack(fill=tk.BOTH, expand=True)
+
+        # Left side - Input
+        left_frame = ttk.LabelFrame(paned, text="Input Text (Sent to LLM)")
+        self.left_text = TextWithLineNumbers(left_frame, wrap=tk.NONE,
+                                             font=('Courier', 9), bg='#fff8dc')
+        self.left_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.left_text.text.config(state=tk.DISABLED)
+        paned.add(left_frame)
+
+        # Right side - Output
+        right_frame = ttk.LabelFrame(paned, text="Output Text (Received from LLM)")
+        self.right_text = TextWithLineNumbers(right_frame, wrap=tk.NONE,
+                                              font=('Courier', 9), bg='#e8f4ea')
+        self.right_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.right_text.text.config(state=tk.DISABLED)
+        paned.add(right_frame)
+
+        # Synchronize scrolling
+        self.left_text.text.config(yscrollcommand=self.on_scroll)
+        self.right_text.text.config(yscrollcommand=self.on_scroll)
+
+    def on_scroll(self, *args):
+        """Synchronize scrolling between left and right"""
+        # Update both scrollbars
+        self.left_text.scrollbar.set(*args)
+        self.right_text.scrollbar.set(*args)
+        # Sync scroll positions
+        self.left_text.text.yview_moveto(args[0])
+        self.right_text.text.yview_moveto(args[0])
+
+    def set_content(self, left_content, right_content):
+        """Set content for both sides"""
+        # Enable editing temporarily
+        self.left_text.text.config(state=tk.NORMAL)
+        self.right_text.text.config(state=tk.NORMAL)
+
+        # Clear and insert
+        self.left_text.delete(1.0, tk.END)
+        self.right_text.delete(1.0, tk.END)
+
+        if left_content:
+            self.left_text.insert(1.0, left_content)
+        if right_content:
+            self.right_text.insert(1.0, right_content)
+
+        # Disable editing
+        self.left_text.text.config(state=tk.DISABLED)
+        self.right_text.text.config(state=tk.DISABLED)
+
+
+# ============================================================================
 # GUI APPLICATION
 # ============================================================================
 
@@ -1028,6 +1170,7 @@ class TTSPreprocessorGUI:
         self.seed = tk.IntVar(value=self.settings_mgr.settings.get("seed", 42))
         self.batch_size = tk.IntVar(value=self.settings_mgr.settings.get("batch_size", 500))
         self.max_tokens = tk.IntVar(value=self.settings_mgr.settings.get("max_tokens", 16000))
+        self.min_response_pct = tk.IntVar(value=self.settings_mgr.settings.get("min_response_pct", 85))
 
         # Load saved file paths
         self.input_file.set(self.settings_mgr.settings.get("last_input_file", ""))
@@ -1048,6 +1191,9 @@ class TTSPreprocessorGUI:
         # Batch continuity tracking
         self.previous_input_last_sentence = ""
         self.previous_output_last_sentence = ""
+
+        # Retry tracking for comparison reports
+        self.first_attempt_data = None  # Stores (cleaned, llm_input_size, llm_output_size) from first attempt
 
         # Queue for thread-safe GUI updates
         self.log_queue = queue.Queue()
@@ -1139,7 +1285,11 @@ class TTSPreprocessorGUI:
         ttk.Label(params_frame, text="Max Tokens:").grid(row=0, column=6, sticky=tk.W, padx=5)
         ttk.Spinbox(params_frame, from_=1000, to=32000, increment=1000,
                     textvariable=self.max_tokens, width=10).grid(row=0, column=7, padx=5)
-        
+
+        ttk.Label(params_frame, text="Min Response %:").grid(row=0, column=8, sticky=tk.W, padx=5)
+        ttk.Spinbox(params_frame, from_=50, to=100, increment=5,
+                    textvariable=self.min_response_pct, width=10).grid(row=0, column=9, padx=5)
+
         # ==== MIDDLE SECTION: Progress & Controls ====
         control_frame = ttk.Frame(self.root)
         control_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -1197,34 +1347,39 @@ class TTSPreprocessorGUI:
         self.log_text.tag_config('error', foreground='#f48771')
         self.log_text.tag_config('batch', foreground='#c586c0')
         
-        # Tab 2: Current Batch Preview
+        # Tab 2: Current Batch Preview (Diff Viewer)
         preview_frame = ttk.Frame(notebook)
-        notebook.add(preview_frame, text="👁 Current Batch Preview")
-        
-        preview_paned = ttk.PanedWindow(preview_frame, orient=tk.HORIZONTAL)
-        preview_paned.pack(fill=tk.BOTH, expand=True)
-        
-        # Input preview
-        input_preview_frame = ttk.LabelFrame(preview_paned, text="Input Text")
-        self.input_preview = scrolledtext.ScrolledText(input_preview_frame, wrap=tk.WORD, 
-                                                       font=('Arial', 9), bg='#fff8dc')
-        self.input_preview.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        preview_paned.add(input_preview_frame)
-        
-        # Output preview
-        output_preview_frame = ttk.LabelFrame(preview_paned, text="Output Text")
-        self.output_preview = scrolledtext.ScrolledText(output_preview_frame, wrap=tk.WORD, 
-                                                        font=('Arial', 9), bg='#e8f4ea')
-        self.output_preview.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        preview_paned.add(output_preview_frame)
-        
-        # Tab 3: Full Output View
+        notebook.add(preview_frame, text="👁 Current Batch Diff Viewer")
+
+        self.diff_viewer = DiffViewer(preview_frame)
+        self.diff_viewer.pack(fill=tk.BOTH, expand=True)
+
+        # Tab 3: Full Output View (with line numbers)
         output_frame = ttk.Frame(notebook)
         notebook.add(output_frame, text="📄 Full Output")
-        
-        self.full_output_text = scrolledtext.ScrolledText(output_frame, wrap=tk.WORD, 
-                                                          font=('Arial', 10))
-        self.full_output_text.pack(fill=tk.BOTH, expand=True)
+
+        # Text with line numbers
+        self.full_output_text = TextWithLineNumbers(output_frame, wrap=tk.WORD,
+                                                     font=('Courier', 10))
+        self.full_output_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        # Find function frame
+        find_frame = ttk.Frame(output_frame)
+        find_frame.pack(fill=tk.X, padx=5, pady=5)
+
+        ttk.Label(find_frame, text="Find:").pack(side=tk.LEFT, padx=5)
+        self.find_entry = ttk.Entry(find_frame, width=30)
+        self.find_entry.pack(side=tk.LEFT, padx=5)
+        self.find_entry.bind('<Return>', lambda e: self.find_text())
+
+        ttk.Button(find_frame, text="Find", command=self.find_text).pack(side=tk.LEFT, padx=2)
+        ttk.Button(find_frame, text="Clear Highlights", command=self.clear_highlights).pack(side=tk.LEFT, padx=2)
+
+        self.find_count_label = ttk.Label(find_frame, text="")
+        self.find_count_label.pack(side=tk.LEFT, padx=10)
+
+        # Configure highlight tag for find results
+        self.full_output_text.text.tag_config('highlight', background='yellow', foreground='black')
         
         # Status Bar
         self.status_bar = ttk.Label(self.root, text="Ready", relief=tk.SUNKEN, anchor=tk.W)
@@ -1293,6 +1448,7 @@ class TTSPreprocessorGUI:
             "seed": self.seed.get(),
             "batch_size": self.batch_size.get(),
             "max_tokens": self.max_tokens.get(),
+            "min_response_pct": self.min_response_pct.get(),
             "last_input_file": self.input_file.get(),
             "last_output_file": self.output_file.get(),
             "last_prompt_file": self.prompt_file.get()
@@ -1524,11 +1680,6 @@ class TTSPreprocessorGUI:
                 self.input_file.set(str(output_path))
                 self.log_message(f"✓ Input file updated to: {output_path.name}", 'success')
 
-                # Update preview
-                preview_text = preprocessed[:1000] + "..." if len(preprocessed) > 1000 else preprocessed
-                self.input_preview.delete(1.0, tk.END)
-                self.input_preview.insert(1.0, preview_text)
-
         except Exception as e:
             self.log_message(f"✗ Pre-cleaning failed: {str(e)}", 'error')
             messagebox.showerror("Pre-cleaning Error", f"Failed to pre-clean file:\n{str(e)}")
@@ -1644,10 +1795,52 @@ Status:    ⏹ STOPPED
 Progress:  0.0%"""
         
         self.stats_text.insert(1.0, stats)
-        
+
         if self.is_processing:
             self.root.after(1000, self.update_stats)
-    
+
+    def find_text(self):
+        """Find and highlight text in Full Output tab"""
+        search_term = self.find_entry.get()
+        if not search_term:
+            return
+
+        # Clear previous highlights
+        self.clear_highlights()
+
+        # Get text content
+        text_widget = self.full_output_text.text
+        content = text_widget.get(1.0, tk.END)
+
+        # Find all occurrences
+        count = 0
+        start_pos = '1.0'
+        while True:
+            start_pos = text_widget.search(search_term, start_pos, stopindex=tk.END, nocase=True)
+            if not start_pos:
+                break
+
+            # Calculate end position
+            end_pos = f"{start_pos}+{len(search_term)}c"
+
+            # Highlight
+            text_widget.tag_add('highlight', start_pos, end_pos)
+            count += 1
+
+            # Move to next character to continue searching
+            start_pos = end_pos
+
+        # Update count label
+        if count > 0:
+            self.find_count_label.config(text=f"Found {count} match{'es' if count != 1 else ''}")
+        else:
+            self.find_count_label.config(text="No matches found")
+
+    def clear_highlights(self):
+        """Clear all text highlights in Full Output tab"""
+        self.full_output_text.text.tag_remove('highlight', 1.0, tk.END)
+        self.find_count_label.config(text="")
+
     def start_processing(self):
         """Start the batch processing"""
         # Validation
@@ -1891,6 +2084,41 @@ Progress:  0.0%"""
         diff_ratio = difflib.SequenceMatcher(None, input_sent, output_sent).ratio()
         self.log_message(f"      📊 Similarity: {diff_ratio*100:.1f}%", 'info')
 
+    def log_retry_comparison_report(self, batch_num, second_input_size, second_output_size, second_change):
+        """Generate comparison report between first and second retry attempts"""
+        if not self.first_attempt_data:
+            return
+
+        first_cleaned, first_input_size, first_output_size, first_change = self.first_attempt_data
+
+        self.log_message(f"", 'info')
+        self.log_message(f"   {'='*66}", 'warning')
+        self.log_message(f"   🔄 RETRY COMPARISON REPORT - Batch {batch_num}", 'warning')
+        self.log_message(f"   {'='*66}", 'warning')
+        self.log_message(f"   📊 First Attempt:", 'info')
+        self.log_message(f"      Input:  {first_input_size} chars", 'info')
+        self.log_message(f"      Output: {first_output_size} chars ({first_change:+.1f}%)", 'error')
+        self.log_message(f"   📊 Second Attempt (Retry):", 'info')
+        self.log_message(f"      Input:  {second_input_size} chars", 'info')
+        self.log_message(f"      Output: {second_output_size} chars ({second_change:+.1f}%)", 'error')
+
+        # Calculate difference between attempts
+        improvement = second_output_size - first_output_size
+        improvement_pct = (improvement / first_output_size * 100) if first_output_size > 0 else 0
+
+        if improvement > 0:
+            self.log_message(f"   📈 Retry produced {improvement} more chars ({improvement_pct:+.1f}%)", 'warning')
+        elif improvement < 0:
+            self.log_message(f"   📉 Retry produced {-improvement} fewer chars ({improvement_pct:.1f}%)", 'error')
+        else:
+            self.log_message(f"   ➡ Same output size on both attempts", 'warning')
+
+        self.log_message(f"   {'='*66}", 'warning')
+        self.log_message(f"", 'info')
+
+        # Clear first attempt data
+        self.first_attempt_data = None
+
     def check_batch_continuity(self, current_input_text, current_output_text, batch_num):
         """
         Check continuity between consecutive batches.
@@ -2040,8 +2268,8 @@ Remember: Only output the cleaned NEW text, not the context."""
             cleaned_text = response.choices[0].message.content
             next_context = self.extract_last_sentences(cleaned_text, 3)
 
-            # Return stats for logging: (cleaned_text, next_context, input_size, output_size)
-            return cleaned_text, next_context, len(user_message), len(cleaned_text)
+            # Return: (cleaned_text, next_context, input_size, output_size, user_message)
+            return cleaned_text, next_context, len(user_message), len(cleaned_text), user_message
 
         except Exception as e:
             # Mask API key in error message before logging
@@ -2050,7 +2278,7 @@ Remember: Only output the cleaned NEW text, not the context."""
             if api_key:
                 error_msg = SettingsManager.mask_api_key(error_msg, api_key)
             self.log_message(f"✗ Error processing batch {batch_num}: {error_msg}", 'error')
-            return None, context, 0, 0
+            return None, context, 0, 0, None
     
     def process_batches(self):
         """Main processing loop (runs in separate thread)"""
@@ -2096,10 +2324,6 @@ Remember: Only output the cleaned NEW text, not the context."""
                 input_line_count = len(batch_lines)
                 input_char_count = len(batch_text)
 
-                # Update preview
-                self.input_preview.delete(1.0, tk.END)
-                self.input_preview.insert(1.0, batch_text[:2000] + "..." if len(batch_text) > 2000 else batch_text)
-
                 # Log batch info
                 self.log_message(f"\n{'='*70}", 'batch')
                 self.log_message(f"📝 BATCH {batch_num}/{self.total_batches}", 'batch')
@@ -2114,7 +2338,7 @@ Remember: Only output the cleaned NEW text, not the context."""
                 self.log_message(f"   ⚙ Processing with {self.model_name.get()}...", 'info')
                 batch_start_time = time.time()
 
-                cleaned, next_context, llm_input_size, llm_output_size = self.process_single_batch(
+                cleaned, next_context, llm_input_size, llm_output_size, user_message = self.process_single_batch(
                     batch_text,
                     batch_num,
                     self.previous_context
@@ -2139,6 +2363,9 @@ Remember: Only output the cleaned NEW text, not the context."""
                     self.log_message(f"   📥 Received from LLM: {llm_output_size} chars ({llm_change:+.1f}%)", 'info')
 
                     # Validate LLM response size - check for excessive differences
+                    # Calculate threshold based on configured minimum response percentage
+                    min_threshold = -(100 - self.min_response_pct.get())  # e.g., 85% -> -15%
+
                     # Allow for reasonable variation but flag suspicious changes
                     if llm_change > 100:  # Output is more than 2x the input
                         self.log_message(f"   ✗ CRITICAL ERROR: LLM response is {llm_change:+.1f}% larger than input!", 'error')
@@ -2146,21 +2373,27 @@ Remember: Only output the cleaned NEW text, not the context."""
                         self.log_message(f"   ✗ This indicates the LLM may be hallucinating or adding unwanted content", 'error')
                         self.log_message(f"   ⏹ Stopping processing to prevent data contamination", 'error')
                         break
-                    elif llm_change < -50:  # Output is less than half the input
+                    elif llm_change < min_threshold:  # Output is below configured threshold
                         self.log_message(f"   ✗ CRITICAL ERROR: LLM response is {llm_change:.1f}% smaller than input!", 'error')
                         self.log_message(f"   ✗ Expected ~{llm_input_size} chars, received {llm_output_size} chars", 'error')
+                        self.log_message(f"   ✗ Threshold: {self.min_response_pct.get()}% minimum (max {-min_threshold}% reduction)", 'error')
                         self.log_message(f"   ✗ This indicates the LLM may be truncating or losing content", 'error')
 
                         if retry_count == 0:
-                            # First occurrence - retry the batch
+                            # First occurrence - store data and retry the batch
+                            self.first_attempt_data = (cleaned, llm_input_size, llm_output_size, llm_change)
                             retry_count += 1
                             self.log_message(f"   🔄 Retrying batch {batch_num} (attempt {retry_count + 1}/2)...", 'warning')
                             continue  # Retry same batch without advancing
                         else:
-                            # Second occurrence - pause for manual intervention
+                            # Second occurrence - show comparison report and pause
+                            self.log_retry_comparison_report(batch_num, llm_input_size, llm_output_size, llm_change)
                             self.log_message(f"   ⏸ PAUSING processing after retry failed", 'error')
                             self.log_message(f"   ⏸ Please review and manually resume when ready", 'warning')
-                            retry_count = 0  # Reset for next batch
+                            self.log_message(f"   💡 On resume: batch will be retried again with fresh attempt", 'info')
+                            # Reset for fresh manual retry when user resumes
+                            retry_count = 0
+                            self.first_attempt_data = None
                             self.is_paused = True
                             self.pause_btn.config(text="▶ Resume")
                             continue  # Pause and wait for user to resume
@@ -2185,9 +2418,9 @@ Remember: Only output the cleaned NEW text, not the context."""
                     self.previous_input_last_sentence = self.extract_last_sentence(batch_text)
                     self.previous_output_last_sentence = self.extract_last_sentence(cleaned)
 
-                    # Update output preview
-                    self.output_preview.delete(1.0, tk.END)
-                    self.output_preview.insert(1.0, cleaned[:2000] + "..." if len(cleaned) > 2000 else cleaned)
+                    # Update diff viewer
+                    if user_message:
+                        self.diff_viewer.set_content(user_message, cleaned)
 
                     # Append to output file
                     with open(self.output_file.get(), 'a', encoding='utf-8') as f:
@@ -2220,8 +2453,9 @@ Remember: Only output the cleaned NEW text, not the context."""
                     if next_context:
                         self.log_message(f"   Context: '{next_context[:60]}...'", 'info')
 
-                    # Reset retry counter on successful batch
+                    # Reset retry counter and first attempt data on successful batch
                     retry_count = 0
+                    self.first_attempt_data = None
                 else:
                     self.log_message(f"   ✗ Batch FAILED - stopping", 'error')
                     break
