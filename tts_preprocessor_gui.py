@@ -101,6 +101,7 @@ class SettingsManager:
             "seed": 42,
             "batch_size": 500,
             "max_tokens": 16000,
+            "history_limit": 250,  # Maximum number of history entries per viewer
             "last_input_file": "",
             "last_output_file": "",
             "last_prompt_file": "",
@@ -1148,6 +1149,7 @@ class TTSPreprocessorGUI:
         self.batch_size = tk.IntVar(value=self.settings_mgr.settings.get("batch_size", 500))
         self.max_tokens = tk.IntVar(value=self.settings_mgr.settings.get("max_tokens", 16000))
         self.response_percentage = tk.IntVar(value=self.settings_mgr.settings.get("response_percentage", 85))
+        self.history_limit = tk.IntVar(value=self.settings_mgr.settings.get("history_limit", 250))
 
         # Load saved file paths
         self.input_file.set(self.settings_mgr.settings.get("last_input_file", ""))
@@ -1259,6 +1261,10 @@ class TTSPreprocessorGUI:
         ttk.Label(params_frame, text="Response %:").grid(row=0, column=8, sticky=tk.W, padx=5)
         ttk.Spinbox(params_frame, from_=30, to=100, increment=5,
                     textvariable=self.response_percentage, width=10).grid(row=0, column=9, padx=5)
+
+        ttk.Label(params_frame, text="History Limit:").grid(row=0, column=10, sticky=tk.W, padx=5)
+        ttk.Spinbox(params_frame, from_=50, to=1000, increment=50,
+                    textvariable=self.history_limit, width=10).grid(row=0, column=11, padx=5)
 
         # ==== MIDDLE SECTION: Progress & Controls ====
         control_frame = ttk.Frame(self.root)
@@ -1577,8 +1583,8 @@ class TTSPreprocessorGUI:
         # Add new entry at the beginning
         history.insert(0, entry)
 
-        # Limit history size to 50 entries
-        history = history[:50]
+        # Limit history size based on user setting
+        history = history[:self.history_limit.get()]
 
         # Save to settings
         self.settings_manager.settings["diff_viewer_history"] = history
@@ -1609,8 +1615,8 @@ class TTSPreprocessorGUI:
         # Add new entry at the beginning
         history.insert(0, entry)
 
-        # Limit history size to 50 entries
-        history = history[:50]
+        # Limit history size based on user setting
+        history = history[:self.history_limit.get()]
 
         # Save to settings
         self.settings_manager.settings["full_output_history"] = history
@@ -1745,6 +1751,7 @@ class TTSPreprocessorGUI:
             "batch_size": self.batch_size.get(),
             "max_tokens": self.max_tokens.get(),
             "response_percentage": self.response_percentage.get(),
+            "history_limit": self.history_limit.get(),
             "last_input_file": self.input_file.get(),
             "last_output_file": self.output_file.get(),
             "last_prompt_file": self.prompt_file.get()
