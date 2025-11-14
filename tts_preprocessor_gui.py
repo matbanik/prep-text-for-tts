@@ -101,9 +101,12 @@ class SettingsManager:
             "seed": 42,
             "batch_size": 500,
             "max_tokens": 16000,
+            "history_limit": 250,  # Maximum number of history entries per viewer
             "last_input_file": "",
             "last_output_file": "",
-            "last_prompt_file": ""
+            "last_prompt_file": "",
+            "diff_viewer_history": [],  # History for Diff Viewer
+            "full_output_history": []   # History for Full Output
         }
 
     def save_settings(self):
@@ -1146,6 +1149,7 @@ class TTSPreprocessorGUI:
         self.batch_size = tk.IntVar(value=self.settings_mgr.settings.get("batch_size", 500))
         self.max_tokens = tk.IntVar(value=self.settings_mgr.settings.get("max_tokens", 16000))
         self.response_percentage = tk.IntVar(value=self.settings_mgr.settings.get("response_percentage", 85))
+        self.history_limit = tk.IntVar(value=self.settings_mgr.settings.get("history_limit", 250))
 
         # Load saved file paths
         self.input_file.set(self.settings_mgr.settings.get("last_input_file", ""))
@@ -1258,6 +1262,10 @@ class TTSPreprocessorGUI:
         ttk.Spinbox(params_frame, from_=30, to=100, increment=5,
                     textvariable=self.response_percentage, width=10).grid(row=0, column=9, padx=5)
 
+        ttk.Label(params_frame, text="History Limit:").grid(row=0, column=10, sticky=tk.W, padx=5)
+        ttk.Spinbox(params_frame, from_=50, to=1000, increment=50,
+                    textvariable=self.history_limit, width=10).grid(row=0, column=11, padx=5)
+
         # ==== MIDDLE SECTION: Progress & Controls ====
         control_frame = ttk.Frame(self.root)
         control_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -1325,6 +1333,21 @@ class TTSPreprocessorGUI:
         self.notebook.add(preview_frame, text="[VIEW] Diff Viewer")
         self.diff_viewer_tab_index = 1  # Store tab index for updating title
 
+        # History dropdown frame for Diff Viewer
+        diff_history_frame = ttk.Frame(preview_frame)
+        diff_history_frame.pack(fill=tk.X, padx=5, pady=5)
+
+        ttk.Label(diff_history_frame, text="History:").pack(side=tk.LEFT, padx=5)
+        self.diff_history_var = tk.StringVar()
+        self.diff_history_combo = ttk.Combobox(diff_history_frame, textvariable=self.diff_history_var,
+                                               width=60, state='readonly')
+        self.diff_history_combo.pack(side=tk.LEFT, padx=5)
+        self.diff_history_combo.bind('<<ComboboxSelected>>', self._on_diff_history_selected)
+
+        self.clear_diff_history_btn = ttk.Button(diff_history_frame, text="Clear History",
+                                                 command=self._clear_diff_history)
+        self.clear_diff_history_btn.pack(side=tk.LEFT, padx=5)
+
         preview_paned = ttk.PanedWindow(preview_frame, orient=tk.HORIZONTAL)
         preview_paned.pack(fill=tk.BOTH, expand=True)
 
@@ -1348,6 +1371,21 @@ class TTSPreprocessorGUI:
         # Tab 3: Full Output View with line numbers and Find function
         output_frame = ttk.Frame(self.notebook)
         self.notebook.add(output_frame, text="[DOC] Full Output")
+
+        # History dropdown frame for Full Output
+        full_output_history_frame = ttk.Frame(output_frame)
+        full_output_history_frame.pack(fill=tk.X, padx=5, pady=5)
+
+        ttk.Label(full_output_history_frame, text="History:").pack(side=tk.LEFT, padx=5)
+        self.full_output_history_var = tk.StringVar()
+        self.full_output_history_combo = ttk.Combobox(full_output_history_frame, textvariable=self.full_output_history_var,
+                                                      width=60, state='readonly')
+        self.full_output_history_combo.pack(side=tk.LEFT, padx=5)
+        self.full_output_history_combo.bind('<<ComboboxSelected>>', self._on_full_output_history_selected)
+
+        self.clear_full_output_history_btn = ttk.Button(full_output_history_frame, text="Clear History",
+                                                        command=self._clear_full_output_history)
+        self.clear_full_output_history_btn.pack(side=tk.LEFT, padx=5)
 
         # Text area with line numbers
         self.full_output_text = TextWithLineNumbers(output_frame, wrap=tk.WORD,
@@ -1379,7 +1417,10 @@ class TTSPreprocessorGUI:
         # Status Bar
         self.status_bar = ttk.Label(self.root, text="Ready", relief=tk.SUNKEN, anchor=tk.W)
         self.status_bar.pack(fill=tk.X, side=tk.BOTTOM)
-        
+
+        # Load history dropdowns
+        self._load_history_dropdowns()
+
         self.log_message("[OK] GUI initialized. Configure settings and load files to begin.", 'success')
 
     def _setup_synchronized_scrolling(self):
@@ -1503,6 +1544,152 @@ class TTSPreprocessorGUI:
         self.find_current_index = 0
         self.find_count_label.config(text="")
 
+    # ========================================================================
+    # HISTORY MANAGEMENT METHODS
+    # ========================================================================
+
+    def _load_history_dropdowns(self):
+        """Load history entries from settings into dropdowns"""
+        # Load Diff Viewer history
+        diff_history = self.settings_manager.settings.get("diff_viewer_history", [])
+        diff_entries = [entry["label"] for entry in diff_history]
+        self.diff_history_combo['values'] = diff_entries
+
+        # Load Full Output history
+        full_output_history = self.settings_manager.settings.get("full_output_history", [])
+        full_output_entries = [entry["label"] for entry in full_output_history]
+        self.full_output_history_combo['values'] = full_output_entries
+
+    def _save_to_diff_history(self, input_file, batch_num, input_text, output_text):
+        """Save a batch to Diff Viewer history"""
+        # Extract filename without extension
+        filename = Path(input_file).stem
+        label = f"{filename} - Batch {batch_num}"
+
+        # Create history entry
+        entry = {
+            "label": label,
+            "input_file": input_file,
+            "batch_num": batch_num,
+            "input_text": input_text,
+            "output_text": output_text,
+            "timestamp": datetime.now().isoformat()
+        }
+
+        # Add to history (avoid duplicates based on label)
+        history = self.settings_manager.settings.get("diff_viewer_history", [])
+        # Remove any existing entry with the same label
+        history = [h for h in history if h["label"] != label]
+        # Add new entry at the beginning
+        history.insert(0, entry)
+
+        # Limit history size based on user setting
+        history = history[:self.history_limit.get()]
+
+        # Save to settings
+        self.settings_manager.settings["diff_viewer_history"] = history
+        self.settings_manager.save_settings()
+
+        # Update dropdown
+        self._load_history_dropdowns()
+
+    def _save_to_full_output_history(self, input_file, batch_num, output_text):
+        """Save a batch to Full Output history"""
+        # Extract filename without extension
+        filename = Path(input_file).stem
+        label = f"{filename} - Batch {batch_num}"
+
+        # Create history entry
+        entry = {
+            "label": label,
+            "input_file": input_file,
+            "batch_num": batch_num,
+            "output_text": output_text,
+            "timestamp": datetime.now().isoformat()
+        }
+
+        # Add to history (avoid duplicates based on label)
+        history = self.settings_manager.settings.get("full_output_history", [])
+        # Remove any existing entry with the same label
+        history = [h for h in history if h["label"] != label]
+        # Add new entry at the beginning
+        history.insert(0, entry)
+
+        # Limit history size based on user setting
+        history = history[:self.history_limit.get()]
+
+        # Save to settings
+        self.settings_manager.settings["full_output_history"] = history
+        self.settings_manager.save_settings()
+
+        # Update dropdown
+        self._load_history_dropdowns()
+
+    def _on_diff_history_selected(self, event=None):
+        """Handle Diff Viewer history selection"""
+        selected_label = self.diff_history_var.get()
+        if not selected_label:
+            return
+
+        # Find the entry in history
+        history = self.settings_manager.settings.get("diff_viewer_history", [])
+        entry = next((h for h in history if h["label"] == selected_label), None)
+
+        if entry:
+            # Update Diff Viewer with historical data
+            self.input_preview.delete(1.0, tk.END)
+            self.input_preview.insert(1.0, entry["input_text"])
+
+            self.output_preview.delete(1.0, tk.END)
+            self.output_preview.insert(1.0, entry["output_text"])
+
+            # Update tab title
+            self.notebook.tab(self.diff_viewer_tab_index,
+                            text=f"[VIEW] Diff Viewer - {selected_label}")
+
+            self.log_message(f"[OK] Loaded history: {selected_label}", 'info')
+
+    def _on_full_output_history_selected(self, event=None):
+        """Handle Full Output history selection"""
+        selected_label = self.full_output_history_var.get()
+        if not selected_label:
+            return
+
+        # Find the entry in history
+        history = self.settings_manager.settings.get("full_output_history", [])
+        entry = next((h for h in history if h["label"] == selected_label), None)
+
+        if entry:
+            # Update Full Output with historical data
+            self.full_output_text.delete(1.0, tk.END)
+            self.full_output_text.insert(1.0, entry["output_text"])
+
+            self.log_message(f"[OK] Loaded history: {selected_label}", 'info')
+
+    def _clear_diff_history(self):
+        """Clear all Diff Viewer history"""
+        if messagebox.askyesno("Clear History",
+                              "Are you sure you want to clear all Diff Viewer history?"):
+            self.settings_manager.settings["diff_viewer_history"] = []
+            self.settings_manager.save_settings()
+            self.diff_history_combo['values'] = []
+            self.diff_history_var.set('')
+            self.log_message("[OK] Diff Viewer history cleared", 'info')
+
+    def _clear_full_output_history(self):
+        """Clear all Full Output history"""
+        if messagebox.askyesno("Clear History",
+                              "Are you sure you want to clear all Full Output history?"):
+            self.settings_manager.settings["full_output_history"] = []
+            self.settings_manager.save_settings()
+            self.full_output_history_combo['values'] = []
+            self.full_output_history_var.set('')
+            self.log_message("[OK] Full Output history cleared", 'info')
+
+    # ========================================================================
+    # END HISTORY MANAGEMENT METHODS
+    # ========================================================================
+
     def browse_input(self):
         """Browse for input file"""
         filename = filedialog.askopenfilename(
@@ -1564,6 +1751,7 @@ class TTSPreprocessorGUI:
             "batch_size": self.batch_size.get(),
             "max_tokens": self.max_tokens.get(),
             "response_percentage": self.response_percentage.get(),
+            "history_limit": self.history_limit.get(),
             "last_input_file": self.input_file.get(),
             "last_output_file": self.output_file.get(),
             "last_prompt_file": self.prompt_file.get()
@@ -2534,6 +2722,10 @@ Remember: Only output the cleaned NEW text, not the context."""
                     # Update full output view
                     self.full_output_text.insert(tk.END, cleaned + '\n\n')
                     self.full_output_text.see(tk.END)
+
+                    # Save to history
+                    self._save_to_diff_history(self.input_file.get(), batch_num, batch_text, cleaned)
+                    self._save_to_full_output_history(self.input_file.get(), batch_num, cleaned)
 
                     # Save context
                     self.previous_context = next_context
