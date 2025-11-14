@@ -1551,12 +1551,12 @@ class TTSPreprocessorGUI:
     def _load_history_dropdowns(self):
         """Load history entries from settings into dropdowns"""
         # Load Diff Viewer history
-        diff_history = self.settings_manager.settings.get("diff_viewer_history", [])
+        diff_history = self.settings_mgr.settings.get("diff_viewer_history", [])
         diff_entries = [entry["label"] for entry in diff_history]
         self.diff_history_combo['values'] = diff_entries
 
         # Load Full Output history
-        full_output_history = self.settings_manager.settings.get("full_output_history", [])
+        full_output_history = self.settings_mgr.settings.get("full_output_history", [])
         full_output_entries = [entry["label"] for entry in full_output_history]
         self.full_output_history_combo['values'] = full_output_entries
 
@@ -1577,7 +1577,7 @@ class TTSPreprocessorGUI:
         }
 
         # Add to history (avoid duplicates based on label)
-        history = self.settings_manager.settings.get("diff_viewer_history", [])
+        history = self.settings_mgr.settings.get("diff_viewer_history", [])
         # Remove any existing entry with the same label
         history = [h for h in history if h["label"] != label]
         # Add new entry at the beginning
@@ -1587,8 +1587,8 @@ class TTSPreprocessorGUI:
         history = history[:self.history_limit.get()]
 
         # Save to settings
-        self.settings_manager.settings["diff_viewer_history"] = history
-        self.settings_manager.save_settings()
+        self.settings_mgr.settings["diff_viewer_history"] = history
+        self.settings_mgr.save_settings()
 
         # Update dropdown
         self._load_history_dropdowns()
@@ -1609,7 +1609,7 @@ class TTSPreprocessorGUI:
         }
 
         # Add to history (avoid duplicates based on label)
-        history = self.settings_manager.settings.get("full_output_history", [])
+        history = self.settings_mgr.settings.get("full_output_history", [])
         # Remove any existing entry with the same label
         history = [h for h in history if h["label"] != label]
         # Add new entry at the beginning
@@ -1619,8 +1619,8 @@ class TTSPreprocessorGUI:
         history = history[:self.history_limit.get()]
 
         # Save to settings
-        self.settings_manager.settings["full_output_history"] = history
-        self.settings_manager.save_settings()
+        self.settings_mgr.settings["full_output_history"] = history
+        self.settings_mgr.save_settings()
 
         # Update dropdown
         self._load_history_dropdowns()
@@ -1632,7 +1632,7 @@ class TTSPreprocessorGUI:
             return
 
         # Find the entry in history
-        history = self.settings_manager.settings.get("diff_viewer_history", [])
+        history = self.settings_mgr.settings.get("diff_viewer_history", [])
         entry = next((h for h in history if h["label"] == selected_label), None)
 
         if entry:
@@ -1656,7 +1656,7 @@ class TTSPreprocessorGUI:
             return
 
         # Find the entry in history
-        history = self.settings_manager.settings.get("full_output_history", [])
+        history = self.settings_mgr.settings.get("full_output_history", [])
         entry = next((h for h in history if h["label"] == selected_label), None)
 
         if entry:
@@ -1670,8 +1670,8 @@ class TTSPreprocessorGUI:
         """Clear all Diff Viewer history"""
         if messagebox.askyesno("Clear History",
                               "Are you sure you want to clear all Diff Viewer history?"):
-            self.settings_manager.settings["diff_viewer_history"] = []
-            self.settings_manager.save_settings()
+            self.settings_mgr.settings["diff_viewer_history"] = []
+            self.settings_mgr.save_settings()
             self.diff_history_combo['values'] = []
             self.diff_history_var.set('')
             self.log_message("[OK] Diff Viewer history cleared", 'info')
@@ -1680,8 +1680,8 @@ class TTSPreprocessorGUI:
         """Clear all Full Output history"""
         if messagebox.askyesno("Clear History",
                               "Are you sure you want to clear all Full Output history?"):
-            self.settings_manager.settings["full_output_history"] = []
-            self.settings_manager.save_settings()
+            self.settings_mgr.settings["full_output_history"] = []
+            self.settings_mgr.save_settings()
             self.full_output_history_combo['values'] = []
             self.full_output_history_var.set('')
             self.log_message("[OK] Full Output history cleared", 'info')
